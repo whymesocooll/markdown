@@ -5,6 +5,7 @@ import katex from 'katex';
 import { escapeHtml, slugify } from './utils.js';
 import { KATEX_CSS, HLJS_DARK_CSS, HLJS_LIGHT_CSS, DOC_CSS } from './gen-assets.js';
 import { renderMermaid } from './mermaid.js';
+import { isDesktop, desktopExportPdf } from './desktop.js';
 
 const MATH_TOKEN = (i) => `@@INKMATH${i}@@`;
 
@@ -198,6 +199,7 @@ export function downloadFile(filename, content, mime = 'text/plain;charset=utf-8
   setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
 }
 
+/** 桌面版：主进程 printToPDF 直出文件；浏览器版：隐藏 iframe 调打印（选「另存为 PDF」） */
 export async function printToPdf(md, { title = 'Document', theme = 'light' } = {}) {
   const html = (await buildStandaloneHtmlAsync(md, { title, theme }))
     .replace('</head>', `<style>
@@ -206,6 +208,12 @@ body { background: #fff !important; }
 .ink-article { max-width: none; padding: 0; }
 @media print { a { color: inherit; text-decoration: underline; } pre, table, blockquote, .math-block { break-inside: avoid; } h1,h2,h3 { break-after: avoid; } }
 </style></head>`);
+  if (isDesktop) {
+    const r = await desktopExportPdf(html, title + '.pdf');
+    if (r === null) return 'cancelled';
+    if (!r || !r.ok) return 'failed:' + (r && r.reason || '未知错误');
+    return 'saved';
+  }
   const iframe = document.createElement('iframe');
   iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;';
   document.body.appendChild(iframe);
@@ -223,4 +231,5 @@ body { background: #fff !important; }
   };
   if (doc.readyState === 'complete') setTimeout(go, 400);
   else iframe.onload = () => setTimeout(go, 400);
+  return 'printed';
 }

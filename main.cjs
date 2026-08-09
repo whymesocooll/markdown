@@ -1,6 +1,7 @@
 // InkFlow 桌面应用主进程：窗口 + 文件系统 IPC（Node fs + dialog）
 const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
 const fs = require('node:fs/promises');
+const os = require('node:os');
 const path = require('node:path');
 
 const MD_RE = /\.(md|markdown|mdown|mkd|txt)$/i;
@@ -131,6 +132,40 @@ ipcMain.handle('file:saveAs', async (_e, name, text) => {
   if (r.canceled || !r.filePath) return null;
   await fs.writeFile(r.filePath, text, 'utf8');
   return { name: path.basename(r.filePath), handle: fileHandle(r.filePath) };
+});
+
+// 导出 PDF：隐藏窗口加载自包含 HTML → printToPDF → 保存对话框落盘
+// 返回 { ok: true, path } | null（取消） | { ok: false, reason }
+// 测试钩子：INKFLOW_PDF_DIR=<目录> 时跳过对话框直接写入该目录
+ipcMain.handle('pdf:export', async (_e, html, filename) => {
+  const safeName = String(filename || 'document.pdf').replace(/[\\/:*?"<>|]/g, '_');
+  const tmp = path.join(os.tmpdir(), `inkflow-pdf-${Date.now()}.html`);
+  await fs.writeFile(tmp, html, 'utf8');
+  const win = new BrowserWindow({ show: false, webPreferences: { offscreen: true } });
+  try {
+    await win.loadFile(tmp);
+    const data = await win.webContents.printToPDF({ printBackground: true, pageSize: 'A4', preferCSSPageSize: true });
+    if (!data || !data.length) return { ok: false, reason: '生成的 PDF 为空' };
+    let filePath = null;
+    if (process.env.INKFLOW_PDF_DIR) {
+      filePath = path.join(process.env.INKFLOW_PDF_DIR, safeName);
+    } else {
+      const r = await dialog.showSaveDialog(mainWindow, {
+        defaultPath: safeName,
+        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+        title: '导出 PDF'
+      });
+      if (r.canceled || !r.filePath) return null;
+      filePath = r.filePath;
+    }
+    await fs.writeFile(filePath, data);
+    return { ok: true, path: filePath };
+  } catch (e) {
+    return { ok: false, reason: (e && e.message) || String(e) };
+  } finally {
+    win.destroy();
+    try { await fs.unlink(tmp); } catch (e) { /* ignore */ }
+  }
 });
 
 /* ---------------- 启动 ---------------- */

@@ -10,5 +10,6 @@ contextBridge.exposeInMainWorld('inkflowDesktop', {
   createFile: (handle, name) => ipcRenderer.invoke('fs:create', handle, name),
   openFile: () => ipcRenderer.invoke('file:open'),
   saveFile: (handle, text) => ipcRenderer.invoke('file:save', handle, text),
-  saveFileAs: (name, text) => ipcRenderer.invoke('file:saveAs', name, text)
+  saveFileAs: (name, text) => ipcRenderer.invoke('file:saveAs', name, text),
+  exportPdf: (html, filename) => ipcRenderer.invoke('pdf:export', html, filename)
 });

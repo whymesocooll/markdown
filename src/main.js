@@ -377,8 +377,11 @@ async function exportHtml() {
   toast('已导出 HTML');
 }
 async function exportPdf() {
-  await printToPdf(text(), { title: baseName(), theme: 'light' });
-  toast('已调起打印，选择「另存为 PDF」');
+  const r = await printToPdf(text(), { title: baseName(), theme: 'light' });
+  if (r === 'saved') toast('已导出 PDF');
+  else if (r === 'cancelled') return; // 用户取消，不打扰
+  else if (r && r.startsWith('failed:')) toast('导出 PDF 失败：' + r.slice(7));
+  else toast('已调起打印，选择「另存为 PDF」');
 }
 function exportMd() {
   downloadFile(baseName() + '.md', text(), 'text/markdown;charset=utf-8');
