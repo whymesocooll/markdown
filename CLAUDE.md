@@ -28,6 +28,12 @@ npm run smoke:desktop    # Electron 冒烟：preload 桥 + 编辑器挂载 + 文
 
 无 lint / 单测脚本。测试是 puppeteer 冒烟测试，依赖本机 Edge：
 
+## 提交约定
+
+每次改完代码且验证通过后，自动执行 `git add -A && git commit && git push`（不需要等用户提醒）。提交信息用中文写清楚修改了哪些内容（列要点），并保留 `Co-Authored-By: Claude <noreply@anthropic.com>` 结尾。远端为 GitHub 私有仓库 `whymesocooll/markdown`（`origin/main`）。构建产物不入库（见 `.gitignore`）。
+
+
+
 ```powershell
 # 1. 先起静态服务器（测试默认访问 http://127.0.0.1:8123/index.html，可用 URL 环境变量覆盖）
 python -m http.server 8123 -d dist
