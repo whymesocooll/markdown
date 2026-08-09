@@ -254,6 +254,8 @@ function buildDeco(state) {
 
   /* ---------- 块级数学公式 $$ ... $$ ---------- */
   const blockedLines = new Set();
+  const customRanges = [];
+  const customDecos = [];
   const markBlocked = (from, to) => {
     const a = doc.lineAt(from).number;
     const z = doc.lineAt(to).number;
@@ -291,13 +293,18 @@ function buildDeco(state) {
     } else {
       for (let k = i; k <= endLine; k++) lines.push(Decoration.line({ class: 'ink-math-src' }).range(doc.line(k).from));
       for (let k = i; k <= endLine; k++) blockedLines.add(-k); // 仅占位，避免行内扫描重复处理
+      // 隐藏 $$ 分隔符：光标进入公式编辑时只显示源码，保持沉浸式
+      const firstLine = doc.line(i);
+      const lastLine = doc.line(endLine);
+      const open = /^\s{0,3}\$\$/.exec(firstLine.text);
+      if (open) customDecos.push(HIDE.range(firstLine.from, firstLine.from + open[0].length));
+      const close = /\$\$\s*$/.exec(lastLine.text);
+      if (close) customDecos.push(HIDE.range(lastLine.to - close[0].length, lastLine.to));
     }
     i = endLine;
   }
 
   /* ---------- 行内数学公式 / ==高亮== ---------- */
-  const customRanges = [];
-  const customDecos = [];
   const INLINE_MATH = /(?<!\\)\$(?!\s)((?:[^$\\\n]|\\.)+?)(?<!\\)\$/g;
   const HIGHLIGHT = /(?<!\\)==(?!\s)([^\n=]+?)==/g;
   for (let i = 1; i <= doc.lines; i++) {
@@ -313,6 +320,9 @@ function buildDeco(state) {
         if (inCodeContext(tree, from + 1)) continue;
         if (touched(from, to)) {
           customDecos.push(Decoration.mark({ class: 'ink-math-src-inline' }).range(from, to));
+          // 隐藏行内公式的 $ 分隔符：只显示源码，保持沉浸式
+          customDecos.push(HIDE.range(from, from + 1));
+          customDecos.push(HIDE.range(to - 1, to));
         } else {
           customDecos.push(Decoration.replace({ widget: new MathWidget(m[1], false, from) }).range(from, to));
         }
