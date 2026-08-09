@@ -1,0 +1,36 @@
+{
+  "name": "inkflow",
+  "version": "1.0.0",
+  "private": true,
+  "description": "InkFlow - A Typora-like WYSIWYG Markdown editor",
+  "main": "main.cjs",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch",
+    "desktop": "npm run build && electron .",
+    "pack": "electron-packager . InkFlow --platform=win32 --arch=x64 --out=release --overwrite --ignore=node_modules --ignore=^/src --ignore=^/test --ignore=^/shots --ignore=^/shots- --ignore=^/out --ignore=^/out2 --ignore=^/out3 --ignore=^\\.txt$ --ignore=^/esbuild_ --ignore=^/smoke_out.txt --ignore=^/procs.txt --ignore=^/srv --ignore=^/server_stop.txt --ignore=^/attrs.txt --ignore=^/rename_result.txt --ignore=^/_cleanup.txt --ignore=^/esbuild_count.txt",
+    "smoke:desktop": "node test/desktop-smoke.mjs"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.10.4",
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/language-data": "^6.5.2",
+    "@codemirror/search": "^6.7.1",
+    "@codemirror/state": "^6.7.1",
+    "@codemirror/view": "^6.43.8",
+    "@lezer/highlight": "^1.2.3",
+    "@lezer/markdown": "^1.7.2",
+    "codemirror": "^6.0.2",
+    "esbuild": "^0.28.2",
+    "highlight.js": "^11.11.1",
+    "katex": "^0.18.2",
+    "marked": "^18.0.9",
+    "mermaid": "^11.16.1",
+    "puppeteer-core": "^25.5.0"
+  },
+  "devDependencies": {
+    "electron": "^43.3.0",
+    "electron-packager": "^17.1.2"
+  }
+}

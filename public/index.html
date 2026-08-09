@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>InkFlow — Markdown 编辑器</title>
+<link rel="stylesheet" href="app.css">
+<style id="userCss"></style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <div class="titlebar">
+    <div class="tb-left">
+      <button class="icon-btn" id="btnSidebar" title="侧边栏  Ctrl+\">≡</button>
+      <span class="doc-title" id="docTitle" title="双击重命名">未命名.md</span>
+      <span class="dirty-dot" id="dirtyDot"></span>
+    </div>
+    <div class="tb-right">
+      <button class="btn" id="btnNew" title="新建  Ctrl+Alt+N">新建</button>
+      <button class="btn" id="btnOpen" title="打开  Ctrl+O">打开</button>
+      <button class="btn" id="btnSave" title="保存  Ctrl+S">保存</button>
+      <button class="btn ghost" id="btnExport" data-menu-btn>导出 ▾</button>
+      <button class="icon-btn" id="btnTheme" title="切换主题"></button>
+      <button class="icon-btn" id="btnSettings" title="外观设置"></button>
+    </div>
+  </div>
+
+  <div class="toolbar" id="toolbar"></div>
+
+  <div class="main">
+    <aside class="sidebar" id="sidebar">
+      <div class="side-tabs">
+        <button data-tab="outline" class="active">大纲</button>
+        <button data-tab="files">文档</button>
+      </div>
+      <div style="padding:0 8px 6px">
+        <button class="btn ghost" id="btnNewLocal" style="width:100%;justify-content:center">+ 新建文档</button>
+      </div>
+      <div class="side-panel" id="panelOutline"></div>
+      <div class="side-panel hidden" id="panelFiles"></div>
+    </aside>
+
+    <div class="editor-wrap">
+      <div id="editor"></div>
+      <div class="drop-hint hidden" id="dropHint">松开鼠标即可打开 / 插入</div>
+    </div>
+  </div>
+
+  <div class="statusbar">
+    <span id="stWords">0 词</span>
+    <span id="stChars">0 字符</span>
+    <span id="stRead">约 1 分钟</span>
+    <div class="sb-right">
+      <span id="stPos">行 1 : 列 1</span>
+      <span id="saveState">已保存</span>
+      <button id="btnSource" title="源码 / 所见即所得  Ctrl+/">源码</button>
+      <button id="btnFocus" title="专注模式">专注</button>
+      <button id="btnTypewriter" title="打字机模式">打字机</button>
+    </div>
+  </div>
+</div>
+
+<div class="menu hidden" id="exportMenu">
+  <button data-exp="saveas">另存为 Markdown<kbd>Ctrl+Shift+S</kbd></button>
+  <div class="sep"></div>
+  <button data-exp="md">下载 .md</button>
+  <button data-exp="html">导出网页 .html</button>
+  <button data-exp="pdf">导出 PDF / 打印<kbd>Ctrl+Shift+P</kbd></button>
+</div>
+
+<div class="menu hidden" id="headingMenu">
+  <button data-level="1"><span style="font-size:19px;font-weight:700">标题 1</span><kbd>Ctrl+1</kbd></button>
+  <button data-level="2"><span style="font-size:17px;font-weight:700">标题 2</span><kbd>Ctrl+2</kbd></button>
+  <button data-level="3"><span style="font-size:15px;font-weight:700">标题 3</span><kbd>Ctrl+3</kbd></button>
+  <button data-level="4"><span style="font-size:14px;font-weight:600">标题 4</span><kbd>Ctrl+4</kbd></button>
+  <button data-level="5"><span style="font-size:13px;font-weight:600">标题 5</span><kbd>Ctrl+5</kbd></button>
+  <button data-level="6"><span style="font-size:12.5px;font-weight:600">标题 6</span><kbd>Ctrl+6</kbd></button>
+  <div class="sep"></div>
+  <button data-level="0">正文<kbd>Ctrl+0</kbd></button>
+</div>
+
+<div class="overlay hidden" id="overlay"></div>
+
+<div class="dialog hidden" id="settingsDlg">
+  <h3>外观与排版</h3>
+  <div class="field">
+    <label for="setTheme">主题</label>
+    <div class="ctl">
+      <select id="setTheme">
+        <option value="dark">墨夜（暗色）</option>
+        <option value="dracula">德古拉 Dracula</option>
+        <option value="nord">北极光 Nord</option>
+        <option value="tokyo-night">东京之夜 Tokyo Night</option>
+        <option value="light">素白（亮色）</option>
+        <option value="solarized-light">日光 Solarized</option>
+        <option value="auto">跟随系统</option>
+      </select>
+    </div>
+  </div>
+  <div class="field">
+    <label for="setFont">正文字体</label>
+    <div class="ctl">
+      <select id="setFont">
+        <option value="sans">无衬线（屏幕阅读友好）</option>
+        <option value="serif">衬线（长文写作）</option>
+        <option value="mono">等宽</option>
+      </select>
+    </div>
+  </div>
+  <div class="field">
+    <label for="setSize">字号</label>
+    <div class="ctl"><input type="range" id="setSize" min="13" max="24" step="1"><span class="val" id="setSizeVal"></span></div>
+  </div>
+  <div class="field">
+    <label for="setLh">行高</label>
+    <div class="ctl"><input type="range" id="setLh" min="1.4" max="2.4" step="0.05"><span class="val" id="setLhVal"></span></div>
+  </div>
+  <div class="field">
+    <label for="setWidth">页面宽度</label>
+    <div class="ctl"><input type="range" id="setWidth" min="600" max="1200" step="20"><span class="val" id="setWidthVal"></span></div>
+  </div>
+  <div class="field">
+    <label for="setJustify">两端对齐</label>
+    <div class="ctl"><input type="checkbox" id="setJustify"><span style="font-size:12px;color:var(--text-faint)">中文长文更整齐（inter-ideograph）</span></div>
+  </div>
+  <div class="field">
+    <label>中英混排</label>
+    <div class="ctl"><button class="btn ghost" id="btnPangu">为全文中英文之间补空格</button></div>
+  </div>
+  <h3 style="margin-top:18px">自定义样式</h3>
+  <p class="hint">直接写 CSS，实时生效。例如 <code>.cm-content{letter-spacing:.02em}</code> 或 <code>.ink-h1{color:#e6a23c}</code></p>
+  <textarea id="setCss" spellcheck="false" placeholder="/* 你的 CSS */"></textarea>
+  <div class="dialog-actions">
+    <button class="btn ghost" id="btnResetSettings">恢复默认</button>
+    <button class="btn primary" id="btnCloseSettings">完成</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

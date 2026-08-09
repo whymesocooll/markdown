@@ -1,0 +1,41 @@
+// 极简行内 Markdown 渲染（供表格单元格等 Widget 使用），带行内数学公式
+import katex from 'katex';
+import { escapeHtml } from './utils.js';
+
+export function renderInline(src) {
+  let s = String(src == null ? '' : src);
+  const holds = [];
+  const hold = (html) => {
+    holds.push(html);
+    return `\u0001${holds.length - 1}\u0001`;
+  };
+
+  // 行内代码
+  s = s.replace(/`([^`]+)`/g, (_, code) => hold(`<code>${escapeHtml(code)}</code>`));
+  // 行内公式
+  s = s.replace(/\$([^$\n]+)\$/g, (m, tex) => {
+    try {
+      return hold(katex.renderToString(tex, { throwOnError: false, strict: 'ignore', output: 'html' }));
+    } catch (e) { return hold(escapeHtml(m)); }
+  });
+  // 图片
+  s = s.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g,
+    (_, alt, url, title) => hold(`<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}"${title ? ` title="${escapeHtml(title)}"` : ''}>`));
+  // 链接
+  s = s.replace(/\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g,
+    (_, text, url, title) => hold(`<a href="${escapeHtml(url)}"${title ? ` title="${escapeHtml(title)}"` : ''} target="_blank" rel="noopener">${escapeHtml(text)}</a>`));
+
+  s = escapeHtml(s);
+
+  s = s.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>');
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+  s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+  s = s.replace(/(^|[^_\w])_([^_\n]+)_/g, '$1<em>$2</em>');
+  s = s.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+  s = s.replace(/==([^=]+)==/g, '<mark>$1</mark>');
+  s = s.replace(/<br\s*\/?>/gi, '<br>');
+
+  s = s.replace(/\u0001(\d+)\u0001/g, (_, i) => holds[Number(i)]);
+  return s;
+}
