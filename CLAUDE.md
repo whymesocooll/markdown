@@ -71,6 +71,7 @@ CodeMirror 用 `getBoundingClientRect`（不含 margin 的边框盒）建坐标�
 ### 其余模块
 
 - `src/main.js`：全部 UI——工具栏、侧栏（大纲/文件列表）、设置面板、状态栏、菜单、拖拽打开、全局快捷键。`boot()` 里装配一切，并在 `window.InkFlow` 上暴露调试 API（测试依赖它）。
+- `src/obsidian.js`：Obsidian 主题导入器——解析 theme.css 的 CSS 变量（`.theme-dark`/`.theme-light`/`:root`/纯变量块/联合选择器，嵌套 `var()` fallback 多轮展开），映射为 InkFlow 主题变量（`MAP` 表 + 派生色 `color-mix`）。设置面板「导入 CSS 文件」导入，持久化于 `localStorage['inkflow:obsidian-themes']`，注入到 `<style id="obsidian-theme-css">`，主题 key 形如 `obs-<slug>[-light]`。解析/映射为纯函数，`test/obsidian.mjs` 直测（fixture 见 `test/fixtures/sample-theme.css`）。
 - `src/files.js`：优先 File System Access API（可原地保存），否则回退上传/下载；localStorage 文档库 `inkflow:vault`（自动暂存）+ `inkflow:last`（上次打开的文档）。
 - `src/filetree.js`：文件夹树——`showDirectoryPicker` 打开目录、递归遍历（懒加载子目录，深度上限 8）、句柄持久化到 IndexedDB（`inkflow-fs`，重开页面静默恢复）。树状态（展开集合、节点 Map）在 `main.js` 的 `treeState`，渲染逻辑在 `main.js`（`treeSectionHtml`/`treeNodesHtml`）。
 - `src/exporter.js`：marked + highlight.js + KaTeX → 自包含 HTML（KaTeX/hljs/doc CSS 全部内联）；`printToPdf` 用隐藏 iframe 调起 `window.print()`；`downloadFile` 走 Blob URL。mermaid 块导出时在浏览器内渲染为内联 SVG（`buildStandaloneHtmlAsync`），无 mermaid 时结果与同步版一致。

@@ -13,6 +13,7 @@ import * as F from './files.js';
 import * as FT from './filetree.js';
 import { buildStandaloneHtml, buildStandaloneHtmlAsync, downloadFile, printToPdf, renderMarkdown } from './exporter.js';
 import { debounce, countWords, panguSpacing, fmtTime, uid } from './utils.js';
+import { themeCssToBlocks, blockToCss } from './obsidian.js';
 
 /* ---------------- DOM 工具 ---------------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -110,7 +111,73 @@ const THEME_NAMES = {
 };
 // 导出 HTML 只支持暗/亮两套文档样式，新主题归入所属色系
 function themeFamily(t) {
+  if (t && t.startsWith('obs-')) return t.endsWith('-light') ? 'light' : 'dark';
   return t === 'light' || t === 'solarized-light' ? 'light' : 'dark';
+}
+
+/* ---------------- Obsidian 主题导入 ---------------- */
+const OBS_STORE = 'inkflow:obsidian-themes';
+let obsidianThemes = []; // [{ name, key, dark, light }] —— dark/light 为 InkFlow 变量集或 null
+function loadObsidianThemes() {
+  try { obsidianThemes = JSON.parse(localStorage.getItem(OBS_STORE) || '[]'); } catch (e) { obsidianThemes = []; }
+}
+function saveObsidianThemes() {
+  try { localStorage.setItem(OBS_STORE, JSON.stringify(obsidianThemes)); } catch (e) { /* ignore */ }
+}
+function injectObsidianCss() {
+  let st = document.getElementById('obsidian-theme-css');
+  if (!st) { st = document.createElement('style'); st.id = 'obsidian-theme-css'; document.head.appendChild(st); }
+  st.textContent = obsidianThemes
+    .map((t) => blockToCss(t.key, t.dark) + blockToCss(t.key + '-light', t.light))
+    .join('\n');
+}
+function obsThemeLabel(key) {
+  const t = obsidianThemes.find((x) => x.key === key || x.key + '-light' === key);
+  if (!t) return null;
+  return t.name + (key.endsWith('-light') ? ' · 亮色' : ' · 暗色');
+}
+function refreshThemeSelect() {
+  const sel = $('#setTheme');
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = [
+    '<option value="dark">墨夜（暗色）</option>',
+    '<option value="dracula">德古拉 Dracula</option>',
+    '<option value="nord">北极光 Nord</option>',
+    '<option value="tokyo-night">东京之夜 Tokyo Night</option>',
+    '<option value="light">素白（亮色）</option>',
+    '<option value="solarized-light">日光 Solarized</option>',
+    '<option value="auto">跟随系统</option>',
+    ...obsidianThemes.map((t) =>
+      `<option value="${t.key}">${escapeAttr(t.name)} · 暗色（Obsidian）</option>` +
+      (t.light ? `<option value="${t.key}-light">${escapeAttr(t.name)} · 亮色（Obsidian）</option>` : '')),
+  ].join('');
+  sel.value = cur;
+}
+function renderObsidianList() {
+  const el = $('#obsThemeList');
+  if (!el) return;
+  if (!obsidianThemes.length) { el.textContent = '暂无（从 Obsidian 社区下载 theme.css 后导入）'; return; }
+  el.innerHTML = obsidianThemes.map((t, i) =>
+    `<span class="obs-theme-item">${escapeAttr(t.name)}<button class="btn ghost" data-del-obs="${i}" title="删除" style="height:22px;padding:0 8px;margin-left:4px">✕</button></span>`).join(' ');
+}
+async function importObsidianTheme(file) {
+  const css = await file.text();
+  const blocks = themeCssToBlocks(css);
+  if (!blocks.dark && !blocks.light) throw new Error('未找到 Obsidian 主题变量');
+  const base = (file.name.replace(/\.css$/i, '').trim() || 'Obsidian');
+  const slug = base.toLowerCase().replace(/[^a-z0-9一-龥]+/g, '-').replace(/^-+|-+$/g, '') || 'obsidian';
+  let key = 'obs-' + slug, n = 2;
+  while (obsidianThemes.some((t) => t.key === key)) key = 'obs-' + slug + '-' + (n++);
+  obsidianThemes.push({ name: base, key, dark: blocks.dark || null, light: blocks.light || null });
+  saveObsidianThemes();
+  injectObsidianCss();
+  refreshThemeSelect();
+  renderObsidianList();
+  settings.theme = blocks.dark ? key : key + '-light';
+  saveSettings();
+  applyAppearance();
+  return base;
 }
 function applyAppearance() {
   const th = effectiveTheme();
@@ -467,6 +534,8 @@ function toggleMenu(id, anchor) {
 
 /* ---------------- 设置面板 ---------------- */
 function openSettings() {
+  refreshThemeSelect();
+  renderObsidianList();
   $('#setTheme').value = settings.theme;
   $('#setFont').value = settings.fontKind;
   $('#setSize').value = settings.fontSize;
@@ -554,6 +623,10 @@ function boot() {
   buildOutline();
   renderFiles();
   updateStatus();
+  // Obsidian 主题 CSS 需在 applyAppearance 之前注入（当前主题可能是导入的）
+  loadObsidianThemes();
+  injectObsidianCss();
+  refreshThemeSelect();
   applyAppearance();
   wireEvents();
   app.view.focus();
@@ -625,7 +698,7 @@ function wireEvents() {
     const order = ['dark', 'dracula', 'nord', 'tokyo-night', 'light', 'solarized-light', 'auto'];
     settings.theme = order[(order.indexOf(settings.theme) + 1) % order.length];
     saveSettings(); applyAppearance();
-    toast('主题：' + (THEME_NAMES[settings.theme] || settings.theme));
+    toast('主题：' + (THEME_NAMES[settings.theme] || obsThemeLabel(settings.theme) || settings.theme));
   });
   $('#btnSettings').addEventListener('click', openSettings);
 
@@ -729,6 +802,35 @@ function wireEvents() {
   });
   $('#btnTypewriter').addEventListener('click', () => {
     settings.typewriter = !settings.typewriter; saveSettings(); applyAppearance();
+  });
+
+  // Obsidian 主题导入
+  $('#btnImportTheme').addEventListener('click', () => $('#importThemeFile').click());
+  $('#importThemeFile').addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    try {
+      const name = await importObsidianTheme(file);
+      toast(`已导入主题「${name}」，在主题下拉框切换`);
+    } catch (err) {
+      toast('导入失败：' + (err && err.message ? err.message : err));
+    }
+    e.target.value = '';
+  });
+  $('#obsThemeList').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-del-obs]');
+    if (!btn) return;
+    const t = obsidianThemes[Number(btn.dataset.delObs)];
+    if (!t) return;
+    obsidianThemes.splice(Number(btn.dataset.delObs), 1);
+    saveObsidianThemes();
+    injectObsidianCss();
+    refreshThemeSelect();
+    renderObsidianList();
+    if (settings.theme === t.key || settings.theme === t.key + '-light') {
+      settings.theme = 'dark'; saveSettings(); applyAppearance();
+    }
+    toast(`已删除主题「${t.name}」`);
   });
 
   // 设置面板

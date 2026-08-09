@@ -1,0 +1,26 @@
+/* 样例 Obsidian 主题：覆盖关键解析路径（主题块/联合选择器/嵌套 var/纯变量块） */
+.theme-dark {
+  --ctp-base: var(--ctp-custom-base, var(--ctp-ext-base, 30, 30, 46));
+  --ctp-text: var(--ctp-custom-text, var(--ctp-ext-text, 205, 214, 244));
+  --ctp-mauve: var(--ctp-custom-mauve, var(--ctp-ext-mauve, 180, 190, 254));
+  --ctp-red: var(--ctp-custom-red, var(--ctp-ext-red, 243, 139, 168));
+}
+.theme-light {
+  --ctp-base: var(--ctp-custom-base, var(--ctp-ext-base, 239, 241, 245));
+  --ctp-text: var(--ctp-custom-text, var(--ctp-ext-text, 76, 79, 105));
+  --ctp-mauve: var(--ctp-custom-mauve, var(--ctp-ext-mauve, 114, 135, 253));
+}
+.theme-dark,
+.theme-light {
+  --background-primary: rgb(var(--ctp-base));
+  --text-normal: rgb(var(--ctp-text));
+  --text-accent: rgb(var(--ctp-mauve));
+  --text-highlight-bg: rgba(var(--ctp-red), 0.3);
+  --color-keyword: rgb(var(--ctp-mauve));
+  --color-string: rgb(var(--ctp-text));
+}
+.accent-toggle {
+  --interactive-accent: rgb(var(--ctp-mauve));
+}
+.anp-style { color: red; }
+.theme-dark .nav-item { --unused-var: 1px; color: blue; }
