@@ -9,7 +9,9 @@
     "dev": "node build.mjs --watch",
     "desktop": "npm run build && electron .",
     "pack": "electron-packager . InkFlow --platform=win32 --arch=x64 --out=release --overwrite --ignore=node_modules --ignore=^/src --ignore=^/test --ignore=^/shots --ignore=^/shots- --ignore=^/out --ignore=^/out2 --ignore=^/out3 --ignore=^\\.txt$ --ignore=^/esbuild_ --ignore=^/smoke_out.txt --ignore=^/procs.txt --ignore=^/srv --ignore=^/server_stop.txt --ignore=^/attrs.txt --ignore=^/rename_result.txt --ignore=^/_cleanup.txt --ignore=^/esbuild_count.txt",
-    "smoke:desktop": "node test/desktop-smoke.mjs"
+    "smoke:desktop": "node test/desktop-smoke.mjs",
+    "test:vault": "node test/vault.mjs",
+    "test": "npm run build && node test/run.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.4",

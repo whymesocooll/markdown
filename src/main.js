@@ -68,6 +68,10 @@ const app = {
   handle: null,
   dirty: false,
   savedText: '',
+  checkpointText: '',
+  checkpointState: 'saved',
+  checkpointError: null,
+  saveSeq: 0,
   sideTab: 'outline'
 };
 
@@ -229,13 +233,35 @@ function setTitle(name) {
   document.title = app.name + ' — InkFlow';
 }
 
-const autosave = debounce(() => {
-  const doc = F.upsertDoc({ id: app.docId, name: app.name, text: text() });
-  app.docId = doc.id;
-  F.setLastDocId(doc.id);
+function checkpointNeedsAttention() {
+  return app.checkpointState === 'saving' || app.checkpointState === 'failed' || text() !== app.checkpointText;
+}
+
+async function checkpoint({ notifyFailure = true } = {}) {
+  const snapshot = { id: app.docId, name: app.name, text: text(), seq: ++app.saveSeq };
+  app.checkpointState = 'saving';
+  app.checkpointError = null;
+  $('#saveState').textContent = '正在本地暂存…';
+  const r = await F.upsertDoc(snapshot);
+  if (snapshot.seq !== app.saveSeq || snapshot.id !== app.docId) return r;
+  if (!r.ok) {
+    app.checkpointState = 'failed';
+    app.checkpointError = r.error;
+    $('#saveState').textContent = '本地暂存失败';
+    if (notifyFailure) toast('本地暂存失败，请立即保存或导出备份');
+    return r;
+  }
+  app.docId = r.value.id;
+  app.checkpointText = snapshot.text;
+  app.checkpointState = 'saved';
+  app.checkpointError = null;
+  F.setLastDocId(app.docId);
   renderFiles();
-  $('#saveState').textContent = app.handle ? '未保存到文件（已本地暂存）' : '已自动暂存';
-}, 700);
+  $('#saveState').textContent = app.handle && app.dirty ? '未保存到文件（已本地暂存）' : '已自动暂存';
+  return r;
+}
+
+const autosave = debounce(() => { checkpoint(); }, 700);
 
 /* ---------------- 大纲 ---------------- */
 let outline = [];
@@ -356,7 +382,7 @@ async function handleTreeAction(act) {
     const h = await FT.createFile(FT.rootDir(), name);
     if (!h) { toast('创建失败：文件已存在或名称无效'); return; }
     const r = await FT.readFile(h);
-    loadContent(r.name, r.text, r.handle);
+    await loadContent(r.name, r.text, r.handle);
     renderFiles();
     toast(`已创建 ${r.name}`);
   } else if (act === 'refresh') {
@@ -375,8 +401,8 @@ async function handleTreeAction(act) {
 
 /* ---------------- 文件操作 ---------------- */
 async function confirmDiscard() {
-  if (!app.dirty) return true;
-  return window.confirm('当前文档有未保存的改动，确定要放弃吗？');
+  if (!app.dirty && !checkpointNeedsAttention()) return true;
+  return window.confirm('当前文档有尚未安全保存的改动，确定要放弃吗？');
 }
 
 async function newDoc() {
@@ -386,8 +412,10 @@ async function newDoc() {
   setTitle('未命名.md');
   setDoc(app.view, '');
   app.savedText = '';
+  app.checkpointText = '';
   markDirty(false);
-  F.setLastDocId(app.docId);
+  const r = await checkpoint();
+  if (!r.ok) toast('新文档未能本地暂存，请立即保存或导出备份');
   renderFiles();
   app.view.focus();
 }
@@ -396,23 +424,25 @@ async function openDoc() {
   if (!(await confirmDiscard())) return;
   try {
     const r = await F.openFile();
-    loadContent(r.name, r.text, r.handle);
+    await loadContent(r.name, r.text, r.handle);
     toast(`已打开 ${r.name}`);
   } catch (e) { /* 用户取消 */ }
 }
 
-function loadContent(name, content, handle) {
+async function loadContent(name, content, handle) {
   app.docId = uid();
   app.handle = handle || null;
   setTitle(name);
   setDoc(app.view, content);
   app.savedText = content;
+  app.checkpointText = '';
+  app.checkpointState = 'saving';
   markDirty(false);
-  const d = F.upsertDoc({ id: app.docId, name: app.name, text: content });
-  app.docId = d.id;
-  F.setLastDocId(d.id);
+  const r = await checkpoint();
+  if (!r.ok) return r;
   renderFiles();
   buildOutline();
+  return r;
 }
 
 async function saveDoc(forceAs) {
@@ -426,7 +456,8 @@ async function saveDoc(forceAs) {
     setTitle(r.name);
     app.savedText = content;
     markDirty(false);
-    F.upsertDoc({ id: app.docId, name: app.name, text: content });
+    const local = await checkpoint();
+    if (!local.ok) toast('文件已保存，但本地暂存失败');
     renderFiles();
     toast((F.isDesktop || F.hasFS) ? `已保存到 ${r.name}` : `已导出 ${r.name}`);
   } catch (e) {
@@ -555,7 +586,7 @@ function closeSettings() {
 }
 
 /* ---------------- 启动 ---------------- */
-function boot() {
+async function boot() {
   buildToolbar();
 
   const pasteHandler = EditorView.domEventHandlers({
@@ -604,20 +635,27 @@ function boot() {
   });
 
   // 载入上次文档
+  const vault = await F.initVault();
+  if (!vault.ok) {
+    $('#saveState').textContent = '本地文档库不可用';
+    toast('本地文档库不可用，请及时保存或导出备份');
+  }
   const lastId = F.getLastDocId();
-  const last = lastId ? F.getDoc(lastId) : null;
+  const last = vault.ok && lastId ? F.getDoc(lastId) : null;
   if (last) {
     app.docId = last.id;
     setTitle(last.name);
     setDoc(app.view, last.text);
     app.savedText = last.text;
+    app.checkpointText = last.text;
+    app.checkpointState = 'saved';
   } else {
     app.docId = uid();
     setTitle('欢迎.md');
     setDoc(app.view, WELCOME);
     app.savedText = WELCOME;
-    F.upsertDoc({ id: app.docId, name: app.name, text: WELCOME });
-    F.setLastDocId(app.docId);
+    app.checkpointText = '';
+    if (vault.ok) await checkpoint({ notifyFailure: false });
   }
   markDirty(false);
   buildOutline();
@@ -641,7 +679,7 @@ function boot() {
 
   // 供自动化测试 / 高级用户使用的调试入口
   window.InkFlow = {
-    app, buildStandaloneHtml, buildStandaloneHtmlAsync, renderMarkdown, panguSpacing, FT, treeState,
+    app, F, buildStandaloneHtml, buildStandaloneHtmlAsync, renderMarkdown, panguSpacing, FT, treeState,
     renderMermaid, loadMermaid
   };
 }
@@ -709,11 +747,11 @@ function wireEvents() {
     titleEl.focus();
     document.execCommand('selectAll', false, null);
   });
-  titleEl.addEventListener('blur', () => {
+  titleEl.addEventListener('blur', async () => {
     titleEl.contentEditable = 'false';
     const v = titleEl.textContent.trim() || '未命名.md';
     setTitle(/\.\w+$/.test(v) ? v : v + '.md');
-    F.upsertDoc({ id: app.docId, name: app.name, text: text() });
+    await checkpoint();
     renderFiles();
   });
   titleEl.addEventListener('keydown', (e) => {
@@ -745,8 +783,9 @@ function wireEvents() {
     if (del) {
       e.stopPropagation();
       if (window.confirm('删除这个本地暂存文档？')) {
-        F.deleteDoc(del.dataset.del);
-        if (del.dataset.del === app.docId) { app.docId = uid(); }
+        const r = await F.deleteDoc(del.dataset.del);
+        if (!r.ok) { toast('删除失败：' + (r.error && r.error.message || '本地文档库不可用')); return; }
+        if (del.dataset.del === app.docId) { app.docId = uid(); app.checkpointText = ''; }
         renderFiles();
       }
       return;
@@ -762,7 +801,7 @@ function wireEvents() {
       if (!(await confirmDiscard())) return;
       try {
         const r = await FT.readFile(node.handle);
-        loadContent(r.name, r.text, r.handle);
+        await loadContent(r.name, r.text, r.handle);
         toast(`已打开 ${r.name}`);
       } catch (err) {
         toast('打开失败：' + (err.message || err));
@@ -781,6 +820,8 @@ function wireEvents() {
     setTitle(d.name);
     setDoc(app.view, d.text);
     app.savedText = d.text;
+    app.checkpointText = d.text;
+    app.checkpointState = 'saved';
     markDirty(false);
     F.setLastDocId(d.id);
     buildOutline();
@@ -904,7 +945,7 @@ function wireEvents() {
     if (/\.(md|markdown|mdown|mkd|txt)$/i.test(file.name)) {
       if (!(await confirmDiscard())) return;
       const r = await F.readDroppedFile(file);
-      loadContent(r.name, r.text, null);
+      await loadContent(r.name, r.text, null);
       toast(`已打开 ${r.name}`);
     } else if (file.type.startsWith('image/')) {
       const reader = new FileReader();
@@ -914,7 +955,7 @@ function wireEvents() {
   });
 
   window.addEventListener('beforeunload', (e) => {
-    if (app.dirty && app.handle) { e.preventDefault(); e.returnValue = ''; }
+    if (app.dirty || checkpointNeedsAttention()) { e.preventDefault(); e.returnValue = ''; }
   });
 }
 
