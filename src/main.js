@@ -237,6 +237,11 @@ function checkpointNeedsAttention() {
   return app.checkpointState === 'saving' || app.checkpointState === 'failed' || text() !== app.checkpointText;
 }
 
+function sameHandle(a, b) {
+  if (F.isDesktop) return !!a && !!b && a.path === b.path;
+  return a === b;
+}
+
 async function checkpoint({ notifyFailure = true } = {}) {
   const snapshot = { id: app.docId, name: app.name, text: text(), seq: ++app.saveSeq };
   app.checkpointState = 'saving';
@@ -261,7 +266,37 @@ async function checkpoint({ notifyFailure = true } = {}) {
   return r;
 }
 
-const autosave = debounce(() => { checkpoint(); }, 700);
+async function autoSaveFile({ checkpointOk } = {}) {
+  if (!app.handle || !app.dirty) return;
+  const snapshot = {
+    docId: app.docId,
+    handle: app.handle,
+    name: app.name,
+    text: text()
+  };
+  $('#saveState').textContent = '正在自动保存到文件…';
+  try {
+    const r = await F.saveFile(snapshot);
+    const current = snapshot.docId === app.docId
+      && sameHandle(snapshot.handle, app.handle)
+      && snapshot.text === text();
+    if (!current) return;
+    app.handle = r.handle || snapshot.handle;
+    app.savedText = snapshot.text;
+    markDirty(false);
+    $('#saveState').textContent = checkpointOk ? '已自动保存到文件' : '已自动保存到文件（本地暂存失败）';
+  } catch (e) {
+    const current = snapshot.docId === app.docId && sameHandle(snapshot.handle, app.handle);
+    if (!current || !checkpointOk) return;
+    $('#saveState').textContent = '自动保存失败（已本地暂存）';
+    toast('自动保存失败：' + (e.message || e));
+  }
+}
+
+const autosave = debounce(async () => {
+  const local = await checkpoint();
+  await autoSaveFile({ checkpointOk: local.ok });
+}, 700);
 
 /* ---------------- 大纲 ---------------- */
 let outline = [];
