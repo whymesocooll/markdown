@@ -32,6 +32,12 @@ export async function desktopSaveFile(handle, text) {
 export async function desktopSaveFileAs(name, text) {
   return D().saveFileAs(name, text);
 }
+export function desktopOnBeforeClose(handler) {
+  D().onBeforeClose(handler);
+}
+export function desktopCloseReady() {
+  D().closeReady();
+}
 /** 桌面版导出 PDF：主进程 printToPDF 直出文件（浏览器版走 window.print） */
 export async function desktopExportPdf(html, filename) {
   return D().exportPdf(html, filename); // -> { ok, path } | null(取消) | { ok:false, reason }

@@ -213,6 +213,20 @@ export async function deleteDoc(id) {
   }
 }
 
+export async function clearDocs() {
+  if (!vaultReady) return result(false, null, new Error('本地文档库尚未准备完成'));
+  try {
+    const tx = vaultDb.transaction(DOC_STORE, 'readwrite');
+    tx.objectStore(DOC_STORE).clear();
+    await transactionDone(tx);
+    vaultCache.clear();
+    setLastDocId('');
+    return result(true);
+  } catch (error) {
+    return result(false, null, error);
+  }
+}
+
 export function setLastDocId(id) {
   try { localStorage.setItem(LAST, id || ''); return result(true); } catch (error) { return result(false, null, error); }
 }

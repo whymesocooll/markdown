@@ -10,6 +10,7 @@ const MD_FILTER = [{ name: 'Markdown', extensions: ['md', 'markdown', 'mdown', '
 const FOLDER_STORE = () => path.join(app.getPath('userData'), 'folder-path.json');
 
 let mainWindow = null;
+let closeApproved = false;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -29,6 +30,11 @@ function createWindow() {
   // 隐藏菜单栏：快捷键全部由渲染进程处理（Ctrl+S 等不被菜单拦截）
   Menu.setApplicationMenu(null);
   mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'));
+  mainWindow.on('close', (event) => {
+    if (closeApproved) return;
+    event.preventDefault();
+    mainWindow.webContents.send('app:before-close');
+  });
   return mainWindow;
 }
 
@@ -132,6 +138,12 @@ ipcMain.handle('file:saveAs', async (_e, name, text) => {
   if (r.canceled || !r.filePath) return null;
   await fs.writeFile(r.filePath, text, 'utf8');
   return { name: path.basename(r.filePath), handle: fileHandle(r.filePath) };
+});
+
+ipcMain.on('app:close-ready', (event) => {
+  if (!mainWindow || BrowserWindow.fromWebContents(event.sender) !== mainWindow) return;
+  closeApproved = true;
+  mainWindow.close();
 });
 
 // 导出 PDF：隐藏窗口加载自包含 HTML → printToPDF → 保存对话框落盘

@@ -11,5 +11,7 @@ contextBridge.exposeInMainWorld('inkflowDesktop', {
   openFile: () => ipcRenderer.invoke('file:open'),
   saveFile: (handle, text) => ipcRenderer.invoke('file:save', handle, text),
   saveFileAs: (name, text) => ipcRenderer.invoke('file:saveAs', name, text),
+  onBeforeClose: (handler) => ipcRenderer.on('app:before-close', () => handler()),
+  closeReady: () => ipcRenderer.send('app:close-ready'),
   exportPdf: (html, filename) => ipcRenderer.invoke('pdf:export', html, filename)
 });

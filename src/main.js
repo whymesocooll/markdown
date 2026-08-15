@@ -11,6 +11,7 @@ import { loadMermaid, renderMermaid } from './mermaid.js';
 import * as C from './commands.js';
 import * as F from './files.js';
 import * as FT from './filetree.js';
+import { desktopOnBeforeClose, desktopCloseReady } from './desktop.js';
 import { buildStandaloneHtml, buildStandaloneHtmlAsync, downloadFile, printToPdf, renderMarkdown } from './exporter.js';
 import { debounce, countWords, panguSpacing, fmtTime, uid } from './utils.js';
 import { themeCssToBlocks, blockToCss } from './obsidian.js';
@@ -72,6 +73,7 @@ const app = {
   checkpointState: 'saved',
   checkpointError: null,
   saveSeq: 0,
+  closing: false,
   sideTab: 'outline'
 };
 
@@ -294,9 +296,41 @@ async function autoSaveFile({ checkpointOk } = {}) {
 }
 
 const autosave = debounce(async () => {
+  if (app.closing) return;
   const local = await checkpoint();
   await autoSaveFile({ checkpointOk: local.ok });
 }, 700);
+
+// 临时备份只服务于当前会话。关闭桌面窗口前先落盘，再清空全部临时内容。
+async function finishSessionBeforeClose() {
+  if (app.closing) return false;
+  app.closing = true;
+  try {
+    await checkpoint({ notifyFailure: false });
+    const content = text();
+    let saved = null;
+    if (app.handle) {
+      saved = await F.saveFile({ handle: app.handle, name: app.name, text: content });
+    } else if (app.dirty || content !== app.savedText) {
+      saved = await F.saveFileAs({ name: app.name, text: content });
+      if (!saved) return false;
+    }
+    if (saved) {
+      app.handle = saved.handle || app.handle;
+      setTitle(saved.name);
+      app.savedText = content;
+      markDirty(false);
+    }
+    const cleared = await F.clearDocs();
+    if (!cleared.ok) throw cleared.error || new Error('无法清理临时备份');
+    return true;
+  } catch (e) {
+    toast('关闭前保存失败：' + (e.message || e));
+    return false;
+  } finally {
+    if (app.closing) app.closing = false;
+  }
+}
 
 /* ---------------- 大纲 ---------------- */
 let outline = [];
@@ -350,8 +384,7 @@ function treeSectionHtml() {
       <button class="tree-act" data-tree="refresh" title="刷新文件夹">⟳</button>
       <button class="tree-act" data-tree="close" title="关闭文件夹">×</button>
     </div>
-    <div class="tree">${treeNodesHtml(treeState.nodes)}</div>
-    <div class="vault-head">本地文档</div>`;
+    <div class="tree">${treeNodesHtml(treeState.nodes)}</div>`;
 }
 
 function treeNodesHtml(nodes) {
@@ -373,9 +406,9 @@ function treeNodesHtml(nodes) {
 function vaultSectionHtml() {
   const list = F.listDocs();
   if (!list.length) {
-    return '<div class="empty-tip">本地暂无文档。<br>写点内容会自动暂存在浏览器里。</div>';
+    return '<div class="vault-head">本次会话</div><div class="empty-tip">暂无临时备份。<br>关闭应用时会自动清除。</div>';
   }
-  return list.map((d) => `
+  return '<div class="vault-head">本次会话</div>' + list.map((d) => `
     <div class="file-item${d.id === app.docId ? ' active' : ''}" data-id="${d.id}">
       <div class="fi-main">
         <div class="fi-name">${escapeAttr(d.name)}</div>
@@ -669,29 +702,19 @@ async function boot() {
     }
   });
 
-  // 载入上次文档
+  // 临时备份不跨会话保留：启动时清理异常退出遗留的内容。
   const vault = await F.initVault();
   if (!vault.ok) {
-    $('#saveState').textContent = '本地文档库不可用';
-    toast('本地文档库不可用，请及时保存或导出备份');
+    $('#saveState').textContent = '临时备份不可用';
+    toast('临时备份不可用，请及时保存或导出备份');
   }
-  const lastId = F.getLastDocId();
-  const last = vault.ok && lastId ? F.getDoc(lastId) : null;
-  if (last) {
-    app.docId = last.id;
-    setTitle(last.name);
-    setDoc(app.view, last.text);
-    app.savedText = last.text;
-    app.checkpointText = last.text;
-    app.checkpointState = 'saved';
-  } else {
-    app.docId = uid();
-    setTitle('欢迎.md');
-    setDoc(app.view, WELCOME);
-    app.savedText = WELCOME;
-    app.checkpointText = '';
-    if (vault.ok) await checkpoint({ notifyFailure: false });
-  }
+  if (vault.ok) await F.clearDocs();
+  app.docId = uid();
+  setTitle('欢迎.md');
+  setDoc(app.view, WELCOME);
+  app.savedText = WELCOME;
+  app.checkpointText = '';
+  if (vault.ok) await checkpoint({ notifyFailure: false });
   markDirty(false);
   buildOutline();
   renderFiles();
@@ -702,6 +725,11 @@ async function boot() {
   refreshThemeSelect();
   applyAppearance();
   wireEvents();
+  if (F.isDesktop) {
+    desktopOnBeforeClose(async () => {
+      if (await finishSessionBeforeClose()) desktopCloseReady();
+    });
+  }
   app.view.focus();
 
   // 恢复上次打开的文件夹（异步；无授权时静默跳过）
@@ -715,7 +743,7 @@ async function boot() {
   // 供自动化测试 / 高级用户使用的调试入口
   window.InkFlow = {
     app, F, buildStandaloneHtml, buildStandaloneHtmlAsync, renderMarkdown, panguSpacing, FT, treeState,
-    renderMermaid, loadMermaid
+    renderMermaid, loadMermaid, finishSessionBeforeClose
   };
 }
 
