@@ -1,14 +1,13 @@
 // Obsidian 主题导入测试：
 // 1) 纯函数解析（Node 直测 obsidian.js，覆盖嵌套 var/联合选择器/纯变量块）
 // 2) 端到端 UI（puppeteer 上传 fixture 文件 -> 注入/切换/持久化/删除）
-import puppeteer from 'puppeteer-core';
+import { launchEdge } from './_edge.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { themeCssToBlocks } from '../src/obsidian.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 const URL_ = process.env.URL || 'http://127.0.0.1:8123/index.html';
 const FIXTURE = path.join(root, 'test', 'fixtures', 'sample-theme.css');
 
@@ -31,7 +30,7 @@ check('派生色 accent-soft 生成', blocks.dark['--accent-soft'] === 'color-mi
   blocks.dark && blocks.dark['--accent-soft']);
 
 /* ---- 2. 端到端 UI ---- */
-const browser = await puppeteer.launch({ executablePath: EDGE, headless: 'new', args: ['--no-sandbox'] });
+const browser = await launchEdge();
 const page = await browser.newPage();
 await page.setViewport({ width: 1440, height: 940, deviceScaleFactor: 2 });
 page.on('pageerror', (e) => check('页面无错误', false, e.message));

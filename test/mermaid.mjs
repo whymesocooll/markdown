@@ -1,10 +1,9 @@
 // Mermaid 测试：编辑器内渲染 widget、光标行回源码、导出 HTML 内联 SVG
-import puppeteer from 'puppeteer-core';
+import { launchEdge } from './_edge.mjs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 const URL_ = process.env.URL || 'http://127.0.0.1:8123/index.html';
 
 const errors = [];
@@ -15,10 +14,7 @@ const check = (name, ok, extra = '') => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const browser = await puppeteer.launch({
-  executablePath: EDGE, headless: 'new',
-  args: ['--no-sandbox', '--font-render-hinting=none']
-});
+const browser = await launchEdge();
 const page = await browser.newPage();
 page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 

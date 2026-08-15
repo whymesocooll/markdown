@@ -1,17 +1,13 @@
 // 诊断脚本：抓取页面错误、检查 window.InkFlow、检查 # 标记隐藏
-import puppeteer from 'puppeteer-core';
+import { launchEdge } from './_edge.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 const URL_ = process.env.URL || 'http://127.0.0.1:8123/index.html';
 
 const errors = [];
-const browser = await puppeteer.launch({
-  executablePath: EDGE, headless: 'new',
-  args: ['--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage']
-});
+const browser = await launchEdge(['--disable-gpu', '--disable-dev-shm-usage']);
 const page = await browser.newPage();
 page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
 page.on('pageerror', (e) => errors.push('pageerror: ' + (e.stack || e.message)));

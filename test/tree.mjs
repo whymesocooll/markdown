@@ -1,10 +1,9 @@
 // 文件树测试：桩 showDirectoryPicker -> 树渲染 -> 展开子目录 -> 点击文件打开
-import puppeteer from 'puppeteer-core';
+import { launchEdge } from './_edge.mjs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 const URL_ = process.env.URL || 'http://127.0.0.1:8123/index.html';
 
 const errors = [];
@@ -14,10 +13,7 @@ const check = (name, ok, extra = '') => {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${extra ? '  -> ' + extra : ''}`);
 };
 
-const browser = await puppeteer.launch({
-  executablePath: EDGE, headless: 'new',
-  args: ['--no-sandbox', '--font-render-hinting=none']
-});
+const browser = await launchEdge();
 const page = await browser.newPage();
 page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 

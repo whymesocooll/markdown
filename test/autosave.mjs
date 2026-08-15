@@ -1,7 +1,6 @@
 // 自动保存测试：有文件句柄时回写原文件，无句柄时只暂存，关闭时清理临时备份
-import puppeteer from 'puppeteer-core';
+import { launchEdge } from './_edge.mjs';
 
-const EDGE = process.env.EDGE || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 const URL_ = process.env.URL || 'http://127.0.0.1:8123/index.html';
 const errors = [];
 const results = [];
@@ -10,11 +9,7 @@ const check = (name, ok, extra = '') => {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${extra ? '  -> ' + extra : ''}`);
 };
 
-const browser = await puppeteer.launch({
-  executablePath: EDGE,
-  headless: 'new',
-  args: ['--no-sandbox', '--font-render-hinting=none']
-});
+const browser = await launchEdge();
 const page = await browser.newPage();
 page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 await page.goto(URL_, { waitUntil: 'networkidle0' });

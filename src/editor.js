@@ -11,7 +11,7 @@ import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { searchKeymap, highlightSelectionMatches, search } from '@codemirror/search';
 import { tags as t } from '@lezer/highlight';
 import { codeLanguages } from './langs.js';
-import { livePreviewField, sourceModeField, parseWatcher, linkClickHandler } from './livepreview.js';
+import { livePreviewField, sourceModeField, readModeField, parseWatcher, linkClickHandler } from './livepreview.js';
 import { formatKeymap } from './commands.js';
 
 /** 语法高亮配色：全部走 CSS 变量，切主题时无需重建编辑器 */
@@ -74,6 +74,7 @@ export function createEditor({ parent, doc = '', onChange, onSelection, extra = 
       markdown({ base: markdownLanguage, codeLanguages, addKeymap: true }),
       syntaxHighlighting(inkHighlightStyle),
       sourceModeField,
+      readModeField,
       livePreviewField,
       parseWatcher,
       linkClickHandler,

@@ -1,11 +1,10 @@
 // 浏览器冒烟测试：验证实时渲染、公式、表格、格式化命令与导出
-import puppeteer from 'puppeteer-core';
+import { launchEdge } from './_edge.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 const URL_ = process.env.URL || 'http://127.0.0.1:8123/index.html';
 
 const errors = [];
@@ -16,11 +15,7 @@ const check = (name, ok, extra = '') => {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${extra ? '  -> ' + extra : ''}`);
 };
 
-const browser = await puppeteer.launch({
-  executablePath: EDGE,
-  headless: 'new',
-  args: ['--no-sandbox', '--font-render-hinting=none', '--window-size=1440,940']
-});
+const browser = await launchEdge(['--window-size=1440,940']);
 const page = await browser.newPage();
 await page.setViewport({ width: 1440, height: 940, deviceScaleFactor: 2 });
 page.on('console', (m) => {

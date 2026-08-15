@@ -2,11 +2,11 @@
 import './styles.css';
 import 'katex/dist/katex.min.css';
 import { EditorView } from '@codemirror/view';
-import { EditorSelection } from '@codemirror/state';
+import { EditorState, EditorSelection } from '@codemirror/state';
 import { undo, redo } from '@codemirror/commands';
 import { openSearchPanel } from '@codemirror/search';
-import { createEditor, setDoc } from './editor.js';
-import { sourceModeEffect, sourceModeField, refreshEffect } from './livepreview.js';
+import { createEditor, setDoc, readOnlyComp } from './editor.js';
+import { sourceModeEffect, sourceModeField, readModeEffect, readModeField, refreshEffect } from './livepreview.js';
 import { loadMermaid, renderMermaid } from './mermaid.js';
 import * as C from './commands.js';
 import * as F from './files.js';
@@ -47,6 +47,7 @@ const ICON = {
   moon: svg(P('M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z')),
   settings: svg(P('M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1.5 14h5M9.5 8h5M17.5 16h5')),
   eye: svg(P('M1.5 12S5.5 5 12 5s10.5 7 10.5 7-4 7-10.5 7S1.5 12 1.5 12z') + `<circle cx="12" cy="12" r="3"/>`),
+  book: svg(P('M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z') + P('M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z')),
   focus: svg(`<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.5"/>` + P('M12 2v3M12 19v3M2 12h3M19 12h3')),
   type: svg(P('M4 7V5h16v2M12 5v14M9 19h6')),
   trash: svg(P('M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13'), 14),
@@ -581,7 +582,8 @@ function buildToolbar() {
     ['mathblock', `<span style="font:600 12px var(--font-serif)">Σ²</span>`, '公式块'],
     ['hr', ICON.hr, '分隔线  Ctrl+Shift+-'],
     ['|'],
-    ['search', ICON.search, '查找替换  Ctrl+F']
+    ['search', ICON.search, '查找替换  Ctrl+F'],
+    ['read', ICON.book, '阅读模式（只读）  Ctrl+Alt+R']
   ];
   tb.innerHTML = items.map(([act, icon, title]) =>
     act === '|' ? '<div class="divider"></div>'
@@ -659,6 +661,7 @@ async function boot() {
 
   const pasteHandler = EditorView.domEventHandlers({
     paste(event, view) {
+      if (view.state.readOnly) return true; // 阅读模式：忽略粘贴
       const items = event.clipboardData && event.clipboardData.items;
       if (!items) return false;
       for (const it of items) {
@@ -743,7 +746,8 @@ async function boot() {
   // 供自动化测试 / 高级用户使用的调试入口
   window.InkFlow = {
     app, F, buildStandaloneHtml, buildStandaloneHtmlAsync, renderMarkdown, panguSpacing, FT, treeState,
-    renderMermaid, loadMermaid, finishSessionBeforeClose
+    renderMermaid, loadMermaid, finishSessionBeforeClose,
+    setReadMode, toggleReadMode, isReadMode
   };
 }
 
@@ -759,6 +763,36 @@ function updateStatus() {
   $('#stRead').textContent = `约 ${Math.max(1, Math.round(words / 300))} 分钟`;
 }
 
+/* ---------------- 阅读模式 / 编辑模式 ---------------- */
+// 阅读模式：内容只读、点击不显示源码、隐藏光标；编辑模式恢复正常编辑
+let readMode = false;
+function isReadMode() { return readMode; }
+
+function setReadMode(on) {
+  readMode = on;
+  if (!app.view) return;
+  app.view.dispatch({ effects: [
+    readModeEffect.of(on),
+    readOnlyComp.reconfigure(on ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : [])
+  ] });
+  // 阅读模式与源码模式互斥：进入阅读模式时退出源码模式，反之亦然
+  if (on && app.view.state.field(sourceModeField, false)) {
+    app.view.dispatch({ effects: sourceModeEffect.of(false) });
+    $('#btnSource').classList.remove('on');
+  }
+  $('#app').classList.toggle('read-mode', on);
+  $('#toolbar').classList.toggle('readonly', on);
+  $('#btnSource').disabled = on;
+  const btn = $('#btnRead');
+  if (btn) {
+    btn.textContent = on ? '阅读' : '编辑';
+    btn.classList.toggle('on', on);
+  }
+  toast(on ? '阅读模式：内容只读，点击不显示源码' : '编辑模式：已恢复编辑');
+  app.view.focus();
+}
+function toggleReadMode() { setReadMode(!readMode); }
+
 function wireEvents() {
   // 工具栏
   $('#toolbar').addEventListener('mousedown', (e) => {
@@ -767,6 +801,7 @@ function wireEvents() {
     e.preventDefault();
     const act = btn.dataset.act;
     if (act === 'heading') { toggleMenu('#headingMenu', btn); return; }
+    if (act === 'read') { toggleReadMode(); return; }
     const fn = ACTIONS[act];
     if (fn) fn(app.view);
   });
@@ -894,7 +929,12 @@ function wireEvents() {
   $('#btnNewLocal').addEventListener('click', newDoc);
 
   // 状态栏开关
+  $('#btnRead').addEventListener('click', () => {
+    toggleReadMode();
+    app.view.focus();
+  });
   $('#btnSource').addEventListener('click', () => {
+    if (readMode) { toast('阅读模式下不可查看源码，请先退出'); return; }
     const cur = app.view.state.field(sourceModeField, false);
     app.view.dispatch({ effects: sourceModeEffect.of(!cur) });
     $('#btnSource').classList.toggle('on', !cur);
@@ -957,6 +997,7 @@ function wireEvents() {
   $('#setJustify').addEventListener('change', (e) => { settings.justify = e.target.checked; saveSettings(); applyAppearance(); });
   $('#setCss').addEventListener('input', debounce((e) => { settings.customCss = e.target.value; saveSettings(); applyAppearance(); }, 250));
   $('#btnPangu').addEventListener('click', () => {
+    if (readMode) { toast('阅读模式下不可编辑'); return; }
     const before = text();
     const after = panguSpacing(before);
     if (after === before) { toast('已经是规范的中英混排'); return; }
@@ -983,7 +1024,8 @@ function wireEvents() {
     else if (k === 'n' && e.altKey) { e.preventDefault(); newDoc(); }
     else if (k === '\\') { e.preventDefault(); settings.sidebar = !settings.sidebar; saveSettings(); applyAppearance(); }
     else if (k === 'p' && e.shiftKey) { e.preventDefault(); exportPdf(); }
-    else if (k === '/') { e.preventDefault(); $('#btnSource').click(); }
+    else if (k === '/' && !readMode) { e.preventDefault(); $('#btnSource').click(); }
+    else if (k === 'r' && e.altKey) { e.preventDefault(); toggleReadMode(); }
   });
 
   // 拖拽打开
@@ -1070,7 +1112,7 @@ $$
 
 ---
 
-开始你的写作吧。右下角可切换**专注模式**与**打字机模式**。
+开始你的写作吧。右下角可切换**专注模式**与**打字机模式**，点工具栏的书形按钮或按 **Ctrl+Alt+R** 可进入**阅读模式**（只读，防止误改）。
 `;
 
 boot();

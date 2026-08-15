@@ -2,6 +2,7 @@
 import { EditorSelection } from '@codemirror/state';
 
 export function toggleWrap(view, before, after = before) {
+  if (view.state.readOnly) return false; // 阅读模式：不修改内容
   const spec = view.state.changeByRange((range) => {
     const doc = view.state.doc;
     const { from, to } = range;
@@ -53,6 +54,7 @@ function eachSelectedLine(state, fn) {
 }
 
 export function setHeading(view, level) {
+  if (view.state.readOnly) return false; // 阅读模式：不修改内容
   const changes = eachSelectedLine(view.state, (line) => {
     const m = /^(\s*)(#{1,6} +)?([\s\S]*)$/.exec(line.text);
     const indent = m[1] || '';
@@ -75,6 +77,7 @@ const PREFIX = {
 };
 
 export function toggleLinePrefix(view, kind) {
+  if (view.state.readOnly) return false; // 阅读模式：不修改内容
   const conf = PREFIX[kind];
   if (!conf) return false;
   const state = view.state;
@@ -108,6 +111,7 @@ export function toggleLinePrefix(view, kind) {
 }
 
 export function insertText(view, text, caretOffset = null) {
+  if (view.state.readOnly) return false; // 阅读模式：不修改内容
   const r = view.state.selection.main;
   view.dispatch({
     changes: { from: r.from, to: r.to, insert: text },
@@ -121,6 +125,7 @@ export function insertText(view, text, caretOffset = null) {
 
 /** 在独立块中插入（自动补前后空行） */
 export function insertBlock(view, text, caretOffset = null) {
+  if (view.state.readOnly) return false; // 阅读模式：不修改内容
   const state = view.state;
   const r = state.selection.main;
   const line = state.doc.lineAt(r.from);

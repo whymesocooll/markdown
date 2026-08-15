@@ -1,7 +1,6 @@
 // 全场景点击定位验证：数学块(紧邻/空行)、普通段落、表格、mermaid、分隔线、图片
-import puppeteer from 'puppeteer-core';
-const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
-const browser = await puppeteer.launch({ executablePath: EDGE, headless: 'new', args: ['--no-sandbox'] });
+import { launchEdge } from './_edge.mjs';
+const browser = await launchEdge();
 const page = await browser.newPage();
 await page.setViewport({ width: 1440, height: 940, deviceScaleFactor: 2 });
 await page.goto('http://127.0.0.1:8123/index.html', { waitUntil: 'networkidle0' });

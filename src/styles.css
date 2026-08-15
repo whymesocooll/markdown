@@ -298,6 +298,10 @@ svg { display: block; }
 .toolbar::-webkit-scrollbar { display: none; }
 .toolbar .divider { width: 1px; height: 18px; background: var(--border); margin: 0 6px; flex: none; }
 .toolbar .icon-btn { flex: none; }
+/* 阅读模式：禁用编辑类按钮（保留查找与阅读模式开关本身） */
+.toolbar.readonly .icon-btn:not([data-act="search"]):not([data-act="read"]) {
+  opacity: .35; pointer-events: none;
+}
 
 /* ---------- 主体 ---------- */
 .main { flex: 1; display: flex; min-height: 0; }
@@ -394,6 +398,8 @@ svg { display: block; }
 .app.justify .cm-content { text-align: justify; text-justify: inter-ideograph; }
 .cm-line { padding: 0; }
 .cm-cursor, .cm-dropCursor { border-left-width: 2px; border-left-color: var(--accent); }
+/* 阅读模式：隐藏光标与次要光标，保留选区（可选中复制） */
+.app.read-mode .cm-cursor, .app.read-mode .cm-cursor-secondary { display: none; }
 .cm-selectionBackground, .cm-content ::selection { background: var(--sel) !important; }
 .cm-focused .cm-selectionBackground { background: var(--sel) !important; }
 .cm-activeLine { background: transparent; }
@@ -580,6 +586,8 @@ table.ink-table td.editing { position: relative; }
 }
 .statusbar button:hover { background: var(--panel); color: var(--text); }
 .statusbar button.on { color: var(--accent); }
+.statusbar button:disabled { opacity: .4; cursor: default; }
+.statusbar button:disabled:hover { background: transparent; color: var(--text-faint); }
 
 /* ---------- 弹窗 ---------- */
 .overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, .45); z-index: 80; }

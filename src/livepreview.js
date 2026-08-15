@@ -10,11 +10,21 @@ import {
 const HIDE = Decoration.replace({});
 export const refreshEffect = StateEffect.define();
 export const sourceModeEffect = StateEffect.define();
+export const readModeEffect = StateEffect.define();
 
 export const sourceModeField = StateField.define({
   create: () => false,
   update(v, tr) {
     for (const e of tr.effects) if (e.is(sourceModeEffect)) return !!e.value;
+    return v;
+  }
+});
+
+/** 阅读模式：内容只读，且无论光标在哪都显示渲染效果、永不显示 Markdown 源码 */
+export const readModeField = StateField.define({
+  create: () => false,
+  update(v, tr) {
+    for (const e of tr.effects) if (e.is(readModeEffect)) return !!e.value;
     return v;
   }
 });
@@ -35,7 +45,9 @@ function buildDeco(state) {
 
   const tree = syntaxTree(state);
   const sel = state.selection;
-  const touched = (from, to) => {
+  // 阅读模式下 touched 恒为 false：点击/光标进入任何节点都不显示源码
+  const readMode = state.field(readModeField, false);
+  const touched = readMode ? () => false : (from, to) => {
     for (const r of sel.ranges) if (r.from <= to && r.to >= from) return true;
     return false;
   };
@@ -367,7 +379,7 @@ export const livePreviewField = StateField.define({
   create: (state) => buildDeco(state),
   update(value, tr) {
     const selChanged = !tr.state.selection.eq(tr.startState.selection);
-    const forced = tr.effects.some((e) => e.is(refreshEffect) || e.is(sourceModeEffect));
+    const forced = tr.effects.some((e) => e.is(refreshEffect) || e.is(sourceModeEffect) || e.is(readModeEffect));
     if (tr.docChanged || selChanged || forced) return buildDeco(tr.state);
     return value;
   },

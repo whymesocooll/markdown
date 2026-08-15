@@ -117,6 +117,7 @@ export class CheckboxWidget extends WidgetType {
       : '';
     box.addEventListener('mousedown', (e) => e.preventDefault());
     box.addEventListener('click', (e) => {
+      if (view.state.readOnly) return; // 阅读模式：勾选不可修改
       e.preventDefault();
       e.stopPropagation();
       view.dispatch({ changes: { from: this.from, to: this.to, insert: this.checked ? '[ ]' : '[x]' } });
@@ -254,6 +255,7 @@ export class TableWidget extends WidgetType {
     const html = tableToHtml(this.src, 0);
     wrap.innerHTML = sanitizeHtml(html || `<pre>${escapeHtml(this.src)}</pre>`);
     wrap.addEventListener('mousedown', (e) => {
+      if (view.state.readOnly) return; // 阅读模式：不进入单元格编辑，允许原生选择
       if (e.button === 2) { e.preventDefault(); return; } // 右键：阻止 CM 的指针选择（会把光标移到表格块），留给自定义菜单
       if (e.button !== 0) return;
       const cell = e.target.closest ? e.target.closest('td, th') : null;
@@ -268,6 +270,7 @@ export class TableWidget extends WidgetType {
       }
     });
     wrap.addEventListener('contextmenu', (e) => {
+      if (view.state.readOnly) return; // 阅读模式：不弹出编辑菜单
       const cell = e.target.closest ? e.target.closest('td, th') : null;
       if (!cell) return;
       e.preventDefault();
@@ -284,6 +287,7 @@ export class TableWidget extends WidgetType {
   /** 单元格内联编辑：编辑渲染后的纯文本，Enter/失焦提交，Esc 取消 */
   startCellEdit(cell) {
     const v = this.view;
+    if (v.state.readOnly) return; // 阅读模式：不可编辑
     const r = Number(cell.dataset.r);
     const c = Number(cell.dataset.c);
     const box = document.createElement('textarea');
@@ -316,6 +320,7 @@ export class TableWidget extends WidgetType {
   }
   doOp(op) {
     const v = this.view;
+    if (v.state.readOnly) return; // 阅读模式：不可编辑
     const from = this.from;
     const to = this.from + this.src.length;
     const r = this.menuR;

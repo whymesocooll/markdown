@@ -54,7 +54,7 @@ Edge 路径硬编码在测试里：`C:/Program Files (x86)/Microsoft/Edge/Applic
 
 ### 所见即所得核心（本项目的关键机制）
 
-`src/livepreview.js` 是 WYSIWYG 的核心：基于 Lezer 语法树 + 光标位置构建 CodeMirror 6 的 `Decoration` 集合。**规则：光标所在节点显示 Markdown 源码，其余位置隐藏标记并直接渲染效果**（标题放大、`**`/`~~`/`==` 隐藏、列表符换成圆点、`> ` 与 `#` 隐藏等）。块级/行内数学公式（`$$…$$`、`$…$`）和 `==高亮==` 不走语法树，用正则按行扫描生成装饰。装饰合并后要做冲突过滤（语法树与自定义正则的 replace 装饰重叠会导致崩溃）。
+`src/livepreview.js` 是 WYSIWYG 的核心：基于 Lezer 语法树 + 光标位置构建 CodeMirror 6 的 `Decoration` 集合。**规则：光标所在节点显示 Markdown 源码，其余位置隐藏标记并直接渲染效果**（标题放大、`**`/`~~`/`==` 隐藏、列表符换成圆点、`> ` 与 `#` 隐藏等）。**阅读模式**（工具栏书形按钮 / Ctrl+Alt+R，`readModeField` StateField + `readOnlyComp` 只读）让 `touched` 恒为 false：点击任何位置都不显示源码，仅保留渲染与高亮效果。块级/行内数学公式（`$$…$$`、`$…$`）和 `==高亮==` 不走语法树，用正则按行扫描生成装饰。装饰合并后要做冲突过滤（语法树与自定义正则的 replace 装饰重叠会导致崩溃）。
 
 ### 点击定位的坑（重要，踩过）
 

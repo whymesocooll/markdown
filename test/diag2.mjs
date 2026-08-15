@@ -1,14 +1,10 @@
 // 调试：跟踪 bold -> ul -> table 每一步的文档与选区
-import puppeteer from 'puppeteer-core';
+import { launchEdge } from './_edge.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
-const browser = await puppeteer.launch({
-  executablePath: EDGE, headless: 'new',
-  args: ['--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage']
-});
+const browser = await launchEdge(['--disable-gpu', '--disable-dev-shm-usage']);
 const page = await browser.newPage();
 page.on('pageerror', (e) => console.log('PAGEERROR:', e.message));
 await page.goto('http://127.0.0.1:8123/index.html', { waitUntil: 'networkidle0' });
