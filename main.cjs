@@ -1,5 +1,5 @@
 // InkFlow 桌面应用主进程：窗口 + 文件系统 IPC（Node fs + dialog）
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, screen } = require('electron');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const os = require('node:os');
@@ -9,30 +9,82 @@ const MD_RE = /\.(md|markdown|mdown|mkd|txt)$/i;
 const MAX_DEPTH = 8;
 const MD_FILTER = [{ name: 'Markdown', extensions: ['md', 'markdown', 'mdown', 'mkd', 'txt'] }];
 const FOLDER_STORE = () => path.join(app.getPath('userData'), 'folder-path.json');
+const WINDOW_STORE = () => path.join(app.getPath('userData'), 'window-state.json');
 
 let mainWindow = null;
 let closeApproved = false;
+let windowStateTimer = null;
+
+/* ---------------- 窗口状态记忆 ---------------- */
+const DEF_BOUNDS = { width: 1240, height: 840 };
+function readWindowState() {
+  if (process.env.INKFLOW_SMOKE === '1') return {};
+  try {
+    const s = JSON.parse(fsSync.readFileSync(WINDOW_STORE(), 'utf8'));
+    return typeof s === 'object' && s !== null ? s : {};
+  } catch (e) { return {}; }
+}
+function saveWindowState() {
+  if (process.env.INKFLOW_SMOKE === '1') return;
+  clearTimeout(windowStateTimer);
+  windowStateTimer = setTimeout(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const st = { isMaximized: mainWindow.isMaximized() };
+    if (!st.isMaximized) {
+      const b = mainWindow.getNormalBounds(); // 最大化时保存的是还原态 bounds
+      st.x = b.x; st.y = b.y; st.width = b.width; st.height = b.height;
+    }
+    try { fsSync.writeFileSync(WINDOW_STORE(), JSON.stringify(st), 'utf8'); } catch (e) { /* ignore */ }
+  }, 400);
+}
+function resolveBounds(saved) {
+  const b = saved && !saved.isMaximized && typeof saved.x === 'number' ? saved : DEF_BOUNDS;
+  const width = Math.max(860, b.width || DEF_BOUNDS.width);
+  const height = Math.max(620, b.height || DEF_BOUNDS.height);
+  // 校验保存的位置是否仍落在某个显示器可见区；否则使用默认居中
+  if (typeof b.x !== 'number' || typeof b.y !== 'number') {
+    return { width, height, isMaximized: !!(saved && saved.isMaximized) };
+  }
+  const onScreen = screen.getAllDisplays().some((d) => {
+    const a = d.workArea;
+    return b.x < a.x + a.width - 60 && b.x + width > a.x + 60
+      && b.y < a.y + a.height - 40 && b.y + height > a.y + 40;
+  });
+  if (onScreen) return { x: b.x, y: b.y, width, height, isMaximized: !!(saved && saved.isMaximized) };
+  return { width, height, isMaximized: !!(saved && saved.isMaximized) };
+}
 
 function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 1240,
-    height: 840,
+  const bounds = resolveBounds(readWindowState());
+  const winOpts = {
+    width: bounds.width,
+    height: bounds.height,
     minWidth: 860,
     minHeight: 620,
     title: 'InkFlow',
     backgroundColor: '#16181d',
     autoHideMenuBar: true,
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false
     }
-  });
+  };
+  if (bounds.x !== undefined) { winOpts.x = bounds.x; winOpts.y = bounds.y; }
+  mainWindow = new BrowserWindow(winOpts);
   // 隐藏菜单栏：快捷键全部由渲染进程处理（Ctrl+S 等不被菜单拦截）
   Menu.setApplicationMenu(null);
   mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'));
+  if (bounds.isMaximized) mainWindow.maximize();
+  mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.on('resize', saveWindowState);
+  mainWindow.on('move', saveWindowState);
+  mainWindow.on('maximize', saveWindowState);
+  mainWindow.on('unmaximize', saveWindowState);
   mainWindow.on('close', (event) => {
     if (closeApproved) return;
+    saveWindowState();
     event.preventDefault();
     mainWindow.webContents.send('app:before-close');
   });
@@ -137,6 +189,16 @@ ipcMain.handle('fs:read', async (_e, handle) => {
   const stat = await fs.stat(handle.path);
   // name 用 basename 兜底：调用方可能只传 path（旧 desktop.js 就漏传了 name）
   return { name: handle.name || path.basename(handle.path), text, mtime: stat.mtimeMs, handle };
+});
+
+// 供渲染层判断最近文件是否仍存在（用于「已失效」标记）
+ipcMain.handle('fs:stat', async (_e, p) => {
+  try {
+    const s = await fs.stat(p);
+    return { exists: true, isFile: s.isFile(), mtime: s.mtimeMs };
+  } catch (e) {
+    return { exists: false, isFile: false, mtime: null };
+  }
 });
 
 ipcMain.handle('fs:create', async (_e, dirHandle_, name) => {

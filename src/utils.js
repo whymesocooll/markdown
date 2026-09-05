@@ -3,7 +3,8 @@ export function debounce(fn, wait = 300) {
   let t = null;
   return (...args) => {
     clearTimeout(t);
-    t = setTimeout(() => fn(...args), wait);
+    // wait 传函数时每次触发时取值，支持运行时可调的防抖间隔
+    t = setTimeout(() => fn(...args), typeof wait === 'function' ? wait() : wait);
   };
 }
 

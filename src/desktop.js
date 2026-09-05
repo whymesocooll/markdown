@@ -20,6 +20,9 @@ export async function desktopReadFile(handle) {
   // 传完整句柄（含 name），否则主进程 fs:read 拿不到文件名
   return D().readFile(handle);
 }
+export async function desktopStatPath(p) {
+  return D().statFile(p);
+}
 export async function desktopCreateFile(handle, name) {
   return D().createFile({ path: handle.path }, name);
 }
