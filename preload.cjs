@@ -9,7 +9,7 @@ contextBridge.exposeInMainWorld('inkflowDesktop', {
   readFile: (handle) => ipcRenderer.invoke('fs:read', handle),
   createFile: (handle, name) => ipcRenderer.invoke('fs:create', handle, name),
   openFile: () => ipcRenderer.invoke('file:open'),
-  saveFile: (handle, text) => ipcRenderer.invoke('file:save', handle, text),
+  saveFile: (handle, text, mtime) => ipcRenderer.invoke('file:save', handle, text, mtime),
   saveFileAs: (name, text) => ipcRenderer.invoke('file:saveAs', name, text),
   onBeforeClose: (handler) => ipcRenderer.on('app:before-close', () => handler()),
   closeReady: () => ipcRenderer.send('app:close-ready'),

@@ -47,9 +47,9 @@ export async function saveToHandle(handle, text) {
   await writable.close();
 }
 
-export async function saveFile({ handle, name, text }) {
+export async function saveFile({ handle, name, text, mtime }) {
   if (handle) {
-    if (isDesktop) return desktopSaveFile(handle, text);
+    if (isDesktop) return desktopSaveFile(handle, text, mtime);
     await saveToHandle(handle, text);
     return { handle, name };
   }

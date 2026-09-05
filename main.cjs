@@ -47,6 +47,17 @@ function fileHandle(p) {
   return { kind: 'file', path: p, name: path.basename(p) };
 }
 
+let atomicWriteSeq = 0;
+async function atomicWriteFile(target, text) {
+  const tmp = `${target}.inkflow-tmp-${process.pid}-${Date.now()}-${++atomicWriteSeq}`;
+  try {
+    await fs.writeFile(tmp, text, 'utf8');
+    await fs.rename(tmp, target);
+  } finally {
+    try { await fs.unlink(tmp); } catch (e) { /* 临时文件可能已被 rename */ }
+  }
+}
+
 /* ---------------- 启动参数打开文件（右键“打开方式”/双击关联文件） ---------------- */
 // 待打开文件队列：渲染进程就绪前先缓存，就绪后逐个下发（渲染进程每开完一个会再报就绪）
 const pendingFiles = [];
@@ -123,8 +134,9 @@ ipcMain.handle('fs:walk', (_e, handle, depth) => walkDir(handle.path, depth || 0
 
 ipcMain.handle('fs:read', async (_e, handle) => {
   const text = await fs.readFile(handle.path, 'utf8');
+  const stat = await fs.stat(handle.path);
   // name 用 basename 兜底：调用方可能只传 path（旧 desktop.js 就漏传了 name）
-  return { name: handle.name || path.basename(handle.path), text, handle };
+  return { name: handle.name || path.basename(handle.path), text, mtime: stat.mtimeMs, handle };
 });
 
 ipcMain.handle('fs:create', async (_e, dirHandle_, name) => {
@@ -148,12 +160,20 @@ ipcMain.handle('file:open', async () => {
   if (r.canceled || !r.filePaths[0]) return null;
   const p = r.filePaths[0];
   const text = await fs.readFile(p, 'utf8');
-  return { name: path.basename(p), text, handle: fileHandle(p) };
+  const stat = await fs.stat(p);
+  return { name: path.basename(p), text, mtime: stat.mtimeMs, handle: fileHandle(p) };
 });
 
-ipcMain.handle('file:save', async (_e, handle, text) => {
-  await fs.writeFile(handle.path, text, 'utf8');
-  return { name: handle.name || path.basename(handle.path), handle };
+ipcMain.handle('file:save', async (_e, handle, text, expectedMtime) => {
+  if (expectedMtime != null) {
+    const stat = await fs.stat(handle.path);
+    if (Math.abs(stat.mtimeMs - expectedMtime) > 0.5) {
+      return { conflict: true, currentMtime: stat.mtimeMs };
+    }
+  }
+  await atomicWriteFile(handle.path, text);
+  const stat = await fs.stat(handle.path);
+  return { name: handle.name || path.basename(handle.path), mtime: stat.mtimeMs, handle };
 });
 
 ipcMain.handle('file:saveAs', async (_e, name, text) => {
@@ -165,8 +185,9 @@ ipcMain.handle('file:saveAs', async (_e, name, text) => {
     title: '另存为'
   });
   if (r.canceled || !r.filePath) return null;
-  await fs.writeFile(r.filePath, text, 'utf8');
-  return { name: path.basename(r.filePath), handle: fileHandle(r.filePath) };
+  await atomicWriteFile(r.filePath, text);
+  const stat = await fs.stat(r.filePath);
+  return { name: path.basename(r.filePath), mtime: stat.mtimeMs, handle: fileHandle(r.filePath) };
 });
 
 ipcMain.on('app:close-ready', (event) => {
@@ -253,7 +274,14 @@ app.whenReady().then(() => {
           ? `(async () => {
               if (typeof window.inkflowDesktop !== 'object' || !document.querySelector('.cm-content')${openCheck}) return false;
               const nodes = await window.inkflowDesktop.walkDir({ path: ${JSON.stringify(smokeDir)} }, 0);
-              return Array.isArray(nodes) && nodes.length >= 2 && nodes.some((n) => n.kind === 'dir') && nodes.some((n) => n.kind === 'file');
+              if (!(Array.isArray(nodes) && nodes.length >= 2 && nodes.some((n) => n.kind === 'dir') && nodes.some((n) => n.kind === 'file'))) return false;
+              // 原子保存 + mtime 冲突检测：正确 mtime 保存应成功；旧 mtime 再存应返回冲突
+              const fh = { kind: 'file', path: ${JSON.stringify(smokeDir)} + '/a.md', name: 'a.md' };
+              const rd = await window.inkflowDesktop.readFile(fh);
+              const ok = await window.inkflowDesktop.saveFile(fh, rd.text + '\\n原子保存验证', rd.mtime);
+              if (!ok || ok.conflict) return false;
+              const stale = await window.inkflowDesktop.saveFile(fh, '应被拦截', rd.mtime);
+              return stale && stale.conflict === true;
             })()`
           : `typeof window.inkflowDesktop === "object" && !!document.querySelector(".cm-content")${argFiles.length ? ` && window.InkFlow?.app?.name === ${JSON.stringify(path.basename(argFiles[0]))}` : ''}`;
         const ok = await win.webContents.executeJavaScript(js);

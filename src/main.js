@@ -75,7 +75,8 @@ const app = {
   checkpointError: null,
   saveSeq: 0,
   closing: false,
-  sideTab: 'outline'
+  sideTab: 'outline',
+  mtime: null
 };
 
 /* ---------------- 文件夹树状态 ---------------- */
@@ -218,12 +219,26 @@ mq.addEventListener('change', () => { if (settings.theme === 'auto') applyAppear
 
 /* ---------------- 提示条 ---------------- */
 let toastTimer = null;
-function toast(msg) {
+// toast(msg, { type:'info'|'success'|'error'|'warn', duration }) —— 错误默认更久并带手动关闭
+function toast(msg, { type = 'info', duration = 1800 } = {}) {
   const el = $('#toast');
+  el.classList.toggle('error', type === 'error');
+  el.classList.toggle('warn', type === 'warn');
   el.textContent = msg;
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 1800);
+  if (type === 'error' || type === 'warn') {
+    // 错误提示不自动消失，用户主动关闭
+    const close = document.createElement('button');
+    close.className = 'toast-close';
+    close.textContent = '✕';
+    close.title = '关闭';
+    close.setAttribute('aria-label', '关闭提示');
+    close.onclick = () => { clearTimeout(toastTimer); el.classList.remove('show'); close.remove(); };
+    el.appendChild(close);
+  } else {
+    toastTimer = setTimeout(() => el.classList.remove('show'), duration);
+  }
 }
 
 /* ---------------- 文档状态 ---------------- */
@@ -280,7 +295,8 @@ async function autoSaveFile({ checkpointOk } = {}) {
     docId: app.docId,
     handle: app.handle,
     name: app.name,
-    text: text()
+    text: text(),
+    mtime: app.mtime
   };
   $('#saveState').textContent = '正在自动保存到文件…';
   try {
@@ -289,7 +305,15 @@ async function autoSaveFile({ checkpointOk } = {}) {
       && sameHandle(snapshot.handle, app.handle)
       && snapshot.text === text();
     if (!current) return;
+    if (r.conflict) {
+      // 文件被外部改动：停止自动覆盖，保留脏标记并提示用户
+      markDirty(true);
+      $('#saveState').textContent = '文件已被外部修改';
+      toast('文件已被其他程序修改，自动保存已暂停，请手动处理', { type: 'error', duration: 7000 });
+      return;
+    }
     app.handle = r.handle || snapshot.handle;
+    app.mtime = r.mtime ?? snapshot.mtime;
     app.savedText = snapshot.text;
     markDirty(false);
     $('#saveState').textContent = checkpointOk ? '已自动保存到文件' : '已自动保存到文件（本地暂存失败）';
@@ -297,7 +321,7 @@ async function autoSaveFile({ checkpointOk } = {}) {
     const current = snapshot.docId === app.docId && sameHandle(snapshot.handle, app.handle);
     if (!current || !checkpointOk) return;
     $('#saveState').textContent = '自动保存失败（已本地暂存）';
-    toast('自动保存失败：' + (e.message || e));
+    toast('自动保存失败：' + (e.message || e), { type: 'error', duration: 7000 });
   }
 }
 
@@ -316,13 +340,19 @@ async function finishSessionBeforeClose() {
     const content = text();
     let saved = null;
     if (app.handle) {
-      saved = await F.saveFile({ handle: app.handle, name: app.name, text: content });
+      saved = await F.saveFile({ handle: app.handle, name: app.name, text: content, mtime: app.mtime });
     } else if (app.dirty || content !== app.savedText) {
       saved = await F.saveFileAs({ name: app.name, text: content });
       if (!saved) return false;
     }
+    if (saved && saved.conflict) {
+      // 文件被外部改动：不清空临时备份、不关闭，让用户先处理冲突
+      toast('文件已被其他程序修改，已保留本地暂存，请先处理冲突', { type: 'error', duration: 7000 });
+      return false;
+    }
     if (saved) {
       app.handle = saved.handle || app.handle;
+      app.mtime = saved.mtime ?? app.mtime;
       setTitle(saved.name);
       app.savedText = content;
       markDirty(false);
@@ -331,7 +361,7 @@ async function finishSessionBeforeClose() {
     if (!cleared.ok) throw cleared.error || new Error('无法清理临时备份');
     return true;
   } catch (e) {
-    toast('关闭前保存失败：' + (e.message || e));
+    toast('关闭前保存失败：' + (e.message || e), { type: 'error', duration: 7000 });
     return false;
   } finally {
     if (app.closing) app.closing = false;
@@ -456,7 +486,7 @@ async function handleTreeAction(act) {
     const h = await FT.createFile(FT.rootDir(), name);
     if (!h) { toast('创建失败：文件已存在或名称无效'); return; }
     const r = await FT.readFile(h);
-    await loadContent(r.name, r.text, r.handle);
+    await loadContent(r.name, r.text, r.handle, r.mtime);
     renderFiles();
     toast(`已创建 ${r.name}`);
   } else if (act === 'refresh') {
@@ -476,7 +506,18 @@ async function handleTreeAction(act) {
 /* ---------------- 文件操作 ---------------- */
 async function confirmDiscard() {
   if (!app.dirty && !checkpointNeedsAttention()) return true;
-  return window.confirm('当前文档有尚未安全保存的改动，确定要放弃吗？');
+  const choice = await showConfirm({
+    title: '文档尚未保存',
+    message: '当前文档有尚未保存的改动，接下来要怎么处理？',
+    actions: [
+      { label: '保存并继续', value: 'save', kind: 'primary' },
+      { label: '不保存继续', value: 'discard', kind: 'ghost' },
+      { label: '取消', value: 'cancel', kind: 'ghost' }
+    ]
+  });
+  if (choice === 'discard') return true;
+  if (choice === 'save') return (await saveDoc(false)) === 'saved';
+  return false;
 }
 
 async function newDoc() {
@@ -498,9 +539,13 @@ async function openDoc() {
   if (!(await confirmDiscard())) return;
   try {
     const r = await F.openFile();
-    await loadContent(r.name, r.text, r.handle);
+    if (!r) return; // 用户取消（Electron dialog 返回 null）
+    await loadContent(r.name, r.text, r.handle, r.mtime);
     toast(`已打开 ${r.name}`);
-  } catch (e) { /* 用户取消 */ }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return; // 浏览器文件选择器被取消
+    toast('打开文件失败：' + (e && e.message ? e.message : e), { type: 'error', duration: 7000 });
+  }
 }
 
 // 桌面版：打开启动参数/外部请求指定的文件（右键“打开方式”、已运行时再次打开）
@@ -508,7 +553,7 @@ async function openDocFromPath(p) {
   try {
     if (!(await confirmDiscard())) return;
     const r = await F.openDesktopPath(p);
-    await loadContent(r.name, r.text, r.handle);
+    await loadContent(r.name, r.text, r.handle, r.mtime);
     toast(`已打开 ${r.name}`);
   } catch (e) {
     toast('打开文件失败：' + (e.message || e));
@@ -518,9 +563,10 @@ async function openDocFromPath(p) {
   }
 }
 
-async function loadContent(name, content, handle) {
+async function loadContent(name, content, handle, mtime = null) {
   app.docId = uid();
   app.handle = handle || null;
+  app.mtime = app.handle ? mtime : null;
   setTitle(name);
   setDoc(app.view, content);
   app.savedText = content;
@@ -539,9 +585,14 @@ async function saveDoc(forceAs) {
   try {
     const r = forceAs
       ? await F.saveFileAs({ name: app.name, text: content })
-      : await F.saveFile({ handle: app.handle, name: app.name, text: content });
-    if (!r) return; // 用户取消了保存对话框（Electron）
+      : await F.saveFile({ handle: app.handle, name: app.name, text: content, mtime: app.mtime });
+    if (!r) return 'cancelled'; // 用户取消了保存对话框（Electron）
+    if (r.conflict) {
+      toast('文件已被其他程序修改，请先重新打开或使用另存为', { type: 'error', duration: 7000 });
+      return 'conflict';
+    }
     app.handle = r.handle;
+    app.mtime = r.mtime ?? app.mtime;
     setTitle(r.name);
     app.savedText = content;
     markDirty(false);
@@ -549,8 +600,10 @@ async function saveDoc(forceAs) {
     if (!local.ok) toast('文件已保存，但本地暂存失败');
     renderFiles();
     toast((F.isDesktop || F.hasFS) ? `已保存到 ${r.name}` : `已导出 ${r.name}`);
+    return 'saved';
   } catch (e) {
-    if (e && e.name !== 'AbortError') toast('保存失败：' + (e.message || e));
+    if (e && e.name !== 'AbortError') toast('保存失败：' + (e.message || e), { type: 'error', duration: 7000 });
+    return 'failed';
   }
 }
 
@@ -596,10 +649,10 @@ function buildToolbar() {
     ['|'],
     ['link', ICON.link, '链接  Ctrl+K'],
     ['image', ICON.image, '图片  Ctrl+Shift+I'],
-    ['table', ICON.table, '表格'],
+    ['table', ICON.table, '表格  Ctrl+Alt+T'],
     ['codeblock', ICON.codeblock, '代码块  Ctrl+Shift+K'],
     ['math', `<span style="font:600 14px var(--font-serif)">Σ</span>`, '行内公式  Ctrl+Shift+M'],
-    ['mathblock', `<span style="font:600 12px var(--font-serif)">Σ²</span>`, '公式块'],
+    ['mathblock', `<span style="font:600 12px var(--font-serif)">Σ²</span>`, '公式块  Ctrl+Alt+M'],
     ['hr', ICON.hr, '分隔线  Ctrl+Shift+-'],
     ['|'],
     ['search', ICON.search, '查找替换  Ctrl+F'],
@@ -674,6 +727,43 @@ function closeSettings() {
   $('#overlay').classList.add('hidden');
   $('#settingsDlg').classList.add('hidden');
 }
+
+/* ---------------- 通用确认对话框 ---------------- */
+// showConfirm({ title, message, actions:[{label, value, kind}] }) -> Promise<value>
+// Escape 视为取消（解析为第一个 value 为 'cancel' 的动作，否则最后一个动作）
+let confirmResolve = null;
+function showConfirm({ title, message, actions = [{ label: '取消', value: 'cancel', kind: 'ghost' }] }) {
+  if (confirmResolve) confirmResolve('cancel'); // 已有对话框：直接取消旧的
+  return new Promise((resolve) => {
+    confirmResolve = resolve;
+    $('#confirmTitle').textContent = title || '';
+    $('#confirmMsg').textContent = message || '';
+    $('#confirmMsg').classList.toggle('hidden', !message);
+    const box = $('#confirmActions');
+    box.innerHTML = '';
+    for (const a of actions) {
+      const btn = document.createElement('button');
+      btn.className = 'btn ' + (a.kind || 'ghost');
+      btn.textContent = a.label;
+      btn.onclick = () => dismissConfirm(a.value);
+      box.appendChild(btn);
+    }
+    $('#confirmOverlay').classList.remove('hidden');
+    $('#confirmDlg').classList.remove('hidden');
+    const first = box.querySelector('.primary') || box.querySelector('.btn');
+    if (first) first.focus();
+  });
+}
+function dismissConfirm(value) {
+  $('#confirmOverlay').classList.add('hidden');
+  $('#confirmDlg').classList.add('hidden');
+  const r = confirmResolve; confirmResolve = null;
+  if (r) r(value);
+}
+document.addEventListener('keydown', (e) => {
+  if (!confirmResolve) return;
+  if (e.key === 'Escape') { e.preventDefault(); dismissConfirm('cancel'); }
+});
 
 /* ---------------- 启动 ---------------- */
 async function boot() {
@@ -750,6 +840,29 @@ async function boot() {
   wireEvents();
   if (F.isDesktop) {
     desktopOnBeforeClose(async () => {
+      if (app.dirty || checkpointNeedsAttention()) {
+        const choice = await showConfirm({
+          title: '文档尚未保存',
+          message: app.handle
+            ? '当前文档有尚未保存的改动，关闭前怎么处理？'
+            : '当前文档尚未保存到文件，关闭前怎么处理？',
+          actions: [
+            { label: app.handle ? '保存并关闭' : '另存为并关闭', value: 'save', kind: 'primary' },
+            { label: '不保存关闭', value: 'discard', kind: 'ghost' },
+            { label: '取消', value: 'cancel', kind: 'ghost' }
+          ]
+        });
+        if (choice === 'cancel') return;                 // 取消：保持窗口
+        if (choice === 'save') {
+          if (await finishSessionBeforeClose()) desktopCloseReady();
+          return;
+        }
+        // 不保存关闭：不落盘，清理临时备份后关闭
+        const cleared = await F.clearDocs();
+        if (cleared.ok) desktopCloseReady();
+        else toast('清理临时备份失败，已保留数据，请手动关闭', { type: 'error', duration: 7000 });
+        return;
+      }
       if (await finishSessionBeforeClose()) desktopCloseReady();
     });
     // 订阅外部打开请求（启动参数/二次启动），随后上报就绪触发主进程下发
@@ -903,7 +1016,14 @@ function wireEvents() {
     const del = e.target.closest('button[data-del]');
     if (del) {
       e.stopPropagation();
-      if (window.confirm('删除这个本地暂存文档？')) {
+      if (await showConfirm({
+        title: '删除本地暂存',
+        message: '删除后将无法从本地暂存中恢复这份文档。',
+        actions: [
+          { label: '删除', value: 'delete', kind: 'primary' },
+          { label: '取消', value: 'cancel', kind: 'ghost' }
+        ]
+      }) === 'delete') {
         const r = await F.deleteDoc(del.dataset.del);
         if (!r.ok) { toast('删除失败：' + (r.error && r.error.message || '本地文档库不可用')); return; }
         if (del.dataset.del === app.docId) { app.docId = uid(); app.checkpointText = ''; }
@@ -1073,7 +1193,7 @@ function wireEvents() {
     if (/\.(md|markdown|mdown|mkd|txt)$/i.test(file.name)) {
       if (!(await confirmDiscard())) return;
       const r = await F.readDroppedFile(file);
-      await loadContent(r.name, r.text, null);
+      await loadContent(r.name, r.text, null, null);
       toast(`已打开 ${r.name}`);
     } else if (file.type.startsWith('image/')) {
       const reader = new FileReader();

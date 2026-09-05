@@ -26,8 +26,8 @@ export async function desktopCreateFile(handle, name) {
 export function desktopOpenFile() {
   return D().openFile();
 }
-export async function desktopSaveFile(handle, text) {
-  return D().saveFile(handle, text);
+export async function desktopSaveFile(handle, text, mtime) {
+  return D().saveFile(handle, text, mtime);
 }
 export async function desktopSaveFileAs(name, text) {
   return D().saveFileAs(name, text);
