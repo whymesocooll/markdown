@@ -38,6 +38,14 @@ export function desktopOnBeforeClose(handler) {
 export function desktopCloseReady() {
   D().closeReady();
 }
+/** 渲染进程就绪上报（主进程据此下发启动参数里的待打开文件） */
+export function desktopRendererReady() {
+  D().rendererReady();
+}
+/** 订阅外部打开文件请求（右键“打开方式”/已运行时再次打开），参数为绝对路径 */
+export function desktopOnOpenFile(handler) {
+  D().onOpenFile(handler);
+}
 /** 桌面版导出 PDF：主进程 printToPDF 直出文件（浏览器版走 window.print） */
 export async function desktopExportPdf(html, filename) {
   return D().exportPdf(html, filename); // -> { ok, path } | null(取消) | { ok:false, reason }

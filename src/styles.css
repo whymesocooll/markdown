@@ -220,6 +220,111 @@
   --tok-tag: #dc322f;
 }
 
+/* ---------- 墨池青黛 Ink Wash：青黛夜色 + 暖墨批注 ---------- */
+[data-theme="ink-wash"] {
+  --bg: #172326;
+  --bg-soft: #1a292b;
+  --panel: #1d2d2d;
+  --panel-2: #253838;
+  --border: #304541;
+  --border-soft: #263a38;
+  --text: #d9e8df;
+  --text-strong: #f1f7f1;
+  --text-dim: #91aaa0;
+  --text-faint: #617a73;
+  --accent: #7bc8b2;
+  --accent-soft: rgba(123, 200, 178, .15);
+  --code-bg: #142022;
+  --code-border: #304541;
+  --mark-bg: rgba(217, 173, 114, .28);
+  --quote-bar: #4f8277;
+  --sel: rgba(123, 200, 178, .24);
+  --inline-code: #e39a78;
+  --shadow: 0 12px 36px rgba(4, 16, 17, .48);
+  --tok-keyword: #c6a0f6;
+  --tok-string: #a8d5a2;
+  --tok-number: #e3a36f;
+  --tok-comment: #66827a;
+  --tok-func: #7bc8b2;
+  --tok-type: #e8c27b;
+  --tok-prop: #83c8d0;
+  --tok-var: #d9e8df;
+  --tok-op: #83c8d0;
+  --tok-punct: #8aa39b;
+  --tok-meta: #c6a0f6;
+  --tok-tag: #e58b83;
+}
+
+/* ---------- 藏经纸 Paper Saffron：旧纸底色 + 朱砂批注 ---------- */
+[data-theme="paper-saffron"] {
+  --bg: #f4eddf;
+  --bg-soft: #fbf8f0;
+  --panel: #e8dfcc;
+  --panel-2: #ded2ba;
+  --border: #cfc2a8;
+  --border-soft: #e4dac7;
+  --text: #3f4650;
+  --text-strong: #222a33;
+  --text-dim: #6f756f;
+  --text-faint: #a19b8d;
+  --accent: #9f4f3d;
+  --accent-soft: rgba(159, 79, 61, .12);
+  --code-bg: #eee5d3;
+  --code-border: #d7c9ae;
+  --mark-bg: rgba(202, 164, 67, .28);
+  --quote-bar: #7c9aaa;
+  --sel: rgba(50, 107, 132, .18);
+  --inline-code: #8a3d55;
+  --shadow: 0 12px 32px rgba(76, 57, 34, .16);
+  --tok-keyword: #8b477e;
+  --tok-string: #4d7951;
+  --tok-number: #a86723;
+  --tok-comment: #8e948d;
+  --tok-func: #326b84;
+  --tok-type: #92701d;
+  --tok-prop: #397d87;
+  --tok-var: #3f4650;
+  --tok-op: #326b84;
+  --tok-punct: #7d807d;
+  --tok-meta: #7657a6;
+  --tok-tag: #a13f45;
+}
+
+/* ---------- 碳素紫晶 Carbon Lilac：石墨底 + 紫晶语法色 ---------- */
+[data-theme="carbon-lilac"] {
+  --bg: #17151d;
+  --bg-soft: #1c1923;
+  --panel: #211e2a;
+  --panel-2: #2a2635;
+  --border: #393247;
+  --border-soft: #2d2839;
+  --text: #ded8eb;
+  --text-strong: #f5f0ff;
+  --text-dim: #a59bb8;
+  --text-faint: #6f647f;
+  --accent: #c5a6ff;
+  --accent-soft: rgba(197, 166, 255, .15);
+  --code-bg: #14121a;
+  --code-border: #393247;
+  --mark-bg: rgba(232, 201, 120, .28);
+  --quote-bar: #7657a6;
+  --sel: rgba(197, 166, 255, .24);
+  --inline-code: #f08aa4;
+  --shadow: 0 12px 36px rgba(8, 5, 14, .58);
+  --tok-keyword: #d5a5ff;
+  --tok-string: #a8d889;
+  --tok-number: #f0a56b;
+  --tok-comment: #72677f;
+  --tok-func: #c5a6ff;
+  --tok-type: #e8c978;
+  --tok-prop: #82d8e8;
+  --tok-var: #ded8eb;
+  --tok-op: #bba2e8;
+  --tok-punct: #958aa5;
+  --tok-meta: #e6a8ff;
+  --tok-tag: #f08aa4;
+}
+
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body {

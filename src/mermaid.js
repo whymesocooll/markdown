@@ -13,7 +13,7 @@ export function loadMermaid() {
 }
 
 export function mermaidTheme() {
-  return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+  return ['light', 'solarized-light', 'paper-saffron'].includes(document.documentElement.dataset.theme) ? 'light' : 'dark';
 }
 
 /** 渲染 mermaid 源码为 SVG 字符串（id 每次唯一，mermaid 不允许重复 id） */

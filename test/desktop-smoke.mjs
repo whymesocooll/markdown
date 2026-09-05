@@ -1,4 +1,4 @@
-// Electron 冒烟：启动应用，验证 preload 桥 + 编辑器挂载 + 文件树 IPC 往返
+// Electron 冒烟：启动应用，验证 preload 桥 + 编辑器挂载 + 文件树 IPC 往返 + 启动参数打开文件
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -15,7 +15,8 @@ fs.mkdirSync(path.join(dir, 'sub'));
 fs.writeFileSync(path.join(dir, 'sub', 'b.txt'), 'hi');
 fs.writeFileSync(path.join(dir, 'x.pdf'), 'not md');
 
-const child = spawn(electronPath, ['.'], {
+// 同时把 a.md 作为启动参数传入，验证“右键打开方式”链路（主进程 argv → 渲染进程打开）
+const child = spawn(electronPath, ['.', path.join(dir, 'a.md')], {
   cwd: root,
   env: { ...process.env, INKFLOW_SMOKE: '1', INKFLOW_SMOKE_DIR: dir },
   stdio: ['ignore', 'pipe', 'pipe']

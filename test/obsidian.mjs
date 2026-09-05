@@ -79,7 +79,7 @@ const del = await page.evaluate(() => ({
   opts: document.querySelectorAll('#setTheme option').length,
   hasCss: !!document.getElementById('obsidian-theme-css')?.textContent.includes('obs-sample-theme'),
 }));
-check('删除主题并回退暗色', del.theme === 'dark' && del.opts === 7 && !del.hasCss, del.theme);
+check('删除主题并回退暗色', del.theme === 'dark' && del.opts === 10 && !del.hasCss, del.theme + ' / ' + del.opts);
 
 await browser.close();
 const failed = results.filter((x) => !x).length;

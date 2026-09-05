@@ -1,6 +1,7 @@
 // InkFlow 桌面应用主进程：窗口 + 文件系统 IPC（Node fs + dialog）
 const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
 const fs = require('node:fs/promises');
+const fsSync = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
@@ -44,6 +45,34 @@ function dirHandle(p) {
 }
 function fileHandle(p) {
   return { kind: 'file', path: p, name: path.basename(p) };
+}
+
+/* ---------------- 启动参数打开文件（右键“打开方式”/双击关联文件） ---------------- */
+// 待打开文件队列：渲染进程就绪前先缓存，就绪后逐个下发（渲染进程每开完一个会再报就绪）
+const pendingFiles = [];
+let rendererReady = false;
+
+// 从命令行参数筛出存在的 Markdown/文本文件（跳过 electron 的 '.' 与各类开关）
+function parseFileArgs(argv) {
+  const out = [];
+  for (const a of argv.slice(1)) {
+    if (!a || a === '.' || a.startsWith('-')) continue;
+    try {
+      const p = path.resolve(a);
+      if (MD_RE.test(p) && fsSync.existsSync(p) && fsSync.statSync(p).isFile()) out.push(p);
+    } catch (e) { /* 无效参数忽略 */ }
+  }
+  return out;
+}
+
+function flushPendingFiles() {
+  if (!rendererReady || !mainWindow || mainWindow.isDestroyed()) return;
+  const p = pendingFiles.shift();
+  if (!p) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  mainWindow.webContents.send('app:open-request', p);
 }
 
 async function walkDir(dirPath, depth) {
@@ -146,6 +175,12 @@ ipcMain.on('app:close-ready', (event) => {
   mainWindow.close();
 });
 
+// 渲染进程启动完成后报就绪；主进程据此下发启动参数中的待打开文件
+ipcMain.on('app:renderer-ready', () => {
+  rendererReady = true;
+  flushPendingFiles();
+});
+
 // 导出 PDF：隐藏窗口加载自包含 HTML → printToPDF → 保存对话框落盘
 // 返回 { ok: true, path } | null（取消） | { ok: false, reason }
 // 测试钩子：INKFLOW_PDF_DIR=<目录> 时跳过对话框直接写入该目录
@@ -181,22 +216,46 @@ ipcMain.handle('pdf:export', async (_e, html, filename) => {
 });
 
 /* ---------------- 启动 ---------------- */
+// 单实例锁：应用已运行时再次用“打开方式”启动，把文件转交给已有窗口而不是开新进程。
+// 冒烟/截图模式跳过，避免与开发机上正在运行的 InkFlow 实例互相干扰导致测试失败。
+const wantLock = !process.env.INKFLOW_SMOKE && !process.env.INKFLOW_SHOT;
+if (wantLock && !app.requestSingleInstanceLock()) {
+  app.quit();
+} else if (wantLock) {
+  app.on('second-instance', (_e, argv) => {
+    pendingFiles.push(...parseFileArgs(argv));
+    flushPendingFiles();
+  });
+  // macOS：Finder 双击文件时走 open-file 事件
+  app.on('open-file', (e, p) => {
+    e.preventDefault();
+    pendingFiles.push(p);
+    flushPendingFiles();
+  });
+}
+
 app.whenReady().then(() => {
+  const argFiles = parseFileArgs(process.argv);
+  pendingFiles.push(...argFiles);
   const win = createWindow();
 
   // 冒烟模式：加载完成后检查渲染进程状态并自动退出（供打包验证）
   if (process.env.INKFLOW_SMOKE === '1') {
     win.webContents.once('did-finish-load', async () => {
       try {
-        await new Promise((r) => setTimeout(r, 1500)); // 等编辑器挂载
+        // 传了文件参数时，额外验证该文件确实被渲染进程打开
+        const openCheck = argFiles.length
+          ? ` || window.InkFlow?.app?.name !== ${JSON.stringify(path.basename(argFiles[0]))}`
+          : '';
+        await new Promise((r) => setTimeout(r, argFiles.length ? 3000 : 1500)); // 等编辑器挂载 + 启动参数文件打开
         const smokeDir = process.env.INKFLOW_SMOKE_DIR;
         const js = smokeDir
           ? `(async () => {
-              if (typeof window.inkflowDesktop !== 'object' || !document.querySelector('.cm-content')) return false;
+              if (typeof window.inkflowDesktop !== 'object' || !document.querySelector('.cm-content')${openCheck}) return false;
               const nodes = await window.inkflowDesktop.walkDir({ path: ${JSON.stringify(smokeDir)} }, 0);
               return Array.isArray(nodes) && nodes.length >= 2 && nodes.some((n) => n.kind === 'dir') && nodes.some((n) => n.kind === 'file');
             })()`
-          : 'typeof window.inkflowDesktop === "object" && !!document.querySelector(".cm-content")';
+          : `typeof window.inkflowDesktop === "object" && !!document.querySelector(".cm-content")${argFiles.length ? ` && window.InkFlow?.app?.name === ${JSON.stringify(path.basename(argFiles[0]))}` : ''}`;
         const ok = await win.webContents.executeJavaScript(js);
         console.log('SMOKE_RESULT ' + (ok ? 'PASS' : 'FAIL'));
         app.exit(ok ? 0 : 1);

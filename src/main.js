@@ -11,7 +11,7 @@ import { loadMermaid, renderMermaid } from './mermaid.js';
 import * as C from './commands.js';
 import * as F from './files.js';
 import * as FT from './filetree.js';
-import { desktopOnBeforeClose, desktopCloseReady } from './desktop.js';
+import { desktopOnBeforeClose, desktopCloseReady, desktopRendererReady, desktopOnOpenFile } from './desktop.js';
 import { buildStandaloneHtml, buildStandaloneHtmlAsync, downloadFile, printToPdf, renderMarkdown } from './exporter.js';
 import { debounce, countWords, panguSpacing, fmtTime, uid } from './utils.js';
 import { themeCssToBlocks, blockToCss } from './obsidian.js';
@@ -114,12 +114,14 @@ function effectiveTheme() {
 // 主题展示名（设置面板 / 提示条）
 const THEME_NAMES = {
   dark: '墨夜', light: '素白', dracula: '德古拉', nord: '北极光',
-  'tokyo-night': '东京之夜', 'solarized-light': '日光', auto: '跟随系统',
+  'tokyo-night': '东京之夜', 'solarized-light': '日光',
+  'ink-wash': '墨池青黛', 'paper-saffron': '藏经纸', 'carbon-lilac': '碳素紫晶',
+  auto: '跟随系统',
 };
 // 导出 HTML 只支持暗/亮两套文档样式，新主题归入所属色系
 function themeFamily(t) {
   if (t && t.startsWith('obs-')) return t.endsWith('-light') ? 'light' : 'dark';
-  return t === 'light' || t === 'solarized-light' ? 'light' : 'dark';
+  return t === 'light' || t === 'solarized-light' || t === 'paper-saffron' ? 'light' : 'dark';
 }
 
 /* ---------------- Obsidian 主题导入 ---------------- */
@@ -152,6 +154,9 @@ function refreshThemeSelect() {
     '<option value="dracula">德古拉 Dracula</option>',
     '<option value="nord">北极光 Nord</option>',
     '<option value="tokyo-night">东京之夜 Tokyo Night</option>',
+    '<option value="ink-wash">墨池青黛 Ink Wash</option>',
+    '<option value="carbon-lilac">碳素紫晶 Carbon Lilac</option>',
+    '<option value="paper-saffron">藏经纸 Paper Saffron</option>',
     '<option value="light">素白（亮色）</option>',
     '<option value="solarized-light">日光 Solarized</option>',
     '<option value="auto">跟随系统</option>',
@@ -498,6 +503,21 @@ async function openDoc() {
   } catch (e) { /* 用户取消 */ }
 }
 
+// 桌面版：打开启动参数/外部请求指定的文件（右键“打开方式”、已运行时再次打开）
+async function openDocFromPath(p) {
+  try {
+    if (!(await confirmDiscard())) return;
+    const r = await F.openDesktopPath(p);
+    await loadContent(r.name, r.text, r.handle);
+    toast(`已打开 ${r.name}`);
+  } catch (e) {
+    toast('打开文件失败：' + (e.message || e));
+  } finally {
+    // 已开完一个，上报就绪让主进程继续下发队列里的下一个（如有）
+    desktopRendererReady();
+  }
+}
+
 async function loadContent(name, content, handle) {
   app.docId = uid();
   app.handle = handle || null;
@@ -732,6 +752,9 @@ async function boot() {
     desktopOnBeforeClose(async () => {
       if (await finishSessionBeforeClose()) desktopCloseReady();
     });
+    // 订阅外部打开请求（启动参数/二次启动），随后上报就绪触发主进程下发
+    desktopOnOpenFile(openDocFromPath);
+    desktopRendererReady();
   }
   app.view.focus();
 
@@ -831,7 +854,7 @@ function wireEvents() {
     if (b.dataset.exp === 'saveas') saveDoc(true);
   });
   $('#btnTheme').addEventListener('click', () => {
-    const order = ['dark', 'dracula', 'nord', 'tokyo-night', 'light', 'solarized-light', 'auto'];
+    const order = ['dark', 'dracula', 'nord', 'tokyo-night', 'ink-wash', 'carbon-lilac', 'paper-saffron', 'light', 'solarized-light', 'auto'];
     settings.theme = order[(order.indexOf(settings.theme) + 1) % order.length];
     saveSettings(); applyAppearance();
     toast('主题：' + (THEME_NAMES[settings.theme] || obsThemeLabel(settings.theme) || settings.theme));

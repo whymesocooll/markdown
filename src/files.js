@@ -1,7 +1,7 @@
 // 文件读写：Electron 桌面模式走 Node fs IPC；浏览器优先 File System Access API（可原地保存），否则回退到上传/下载
 import { downloadFile } from './exporter.js';
 import { uid } from './utils.js';
-import { isDesktop, desktopOpenFile, desktopSaveFile, desktopSaveFileAs } from './desktop.js';
+import { isDesktop, desktopOpenFile, desktopReadFile, desktopSaveFile, desktopSaveFileAs } from './desktop.js';
 
 export const hasFS = typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function';
 export { isDesktop } from './desktop.js';
@@ -33,6 +33,12 @@ export async function openFile() {
 
 export async function readDroppedFile(file) {
   return { name: file.name, text: await file.text(), handle: null };
+}
+
+/** 桌面版按绝对路径打开文件（启动参数/外部打开请求），返回结构与 openFile 一致 */
+export async function openDesktopPath(p) {
+  // 主进程 fs:read 依赖 handle.path 读文件，name 缺省时用 basename 兜底
+  return desktopReadFile({ kind: 'file', path: p });
 }
 
 export async function saveToHandle(handle, text) {

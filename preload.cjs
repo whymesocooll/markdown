@@ -13,5 +13,8 @@ contextBridge.exposeInMainWorld('inkflowDesktop', {
   saveFileAs: (name, text) => ipcRenderer.invoke('file:saveAs', name, text),
   onBeforeClose: (handler) => ipcRenderer.on('app:before-close', () => handler()),
   closeReady: () => ipcRenderer.send('app:close-ready'),
-  exportPdf: (html, filename) => ipcRenderer.invoke('pdf:export', html, filename)
+  exportPdf: (html, filename) => ipcRenderer.invoke('pdf:export', html, filename),
+  // 启动参数/二次启动请求打开的文件：渲染进程就绪后上报，主进程逐个下发路径
+  rendererReady: () => ipcRenderer.send('app:renderer-ready'),
+  onOpenFile: (handler) => ipcRenderer.on('app:open-request', (_e, p) => handler(p))
 });
