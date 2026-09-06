@@ -1,5 +1,5 @@
 // 极简行内 Markdown 渲染（供表格单元格等 Widget 使用），带行内数学公式
-import katex from 'katex';
+import { loadKatex, katexNow } from './katex-loader.js';
 import { escapeHtml } from './utils.js';
 
 export function renderInline(src) {
@@ -12,8 +12,10 @@ export function renderInline(src) {
 
   // 行内代码
   s = s.replace(/`([^`]+)`/g, (_, code) => hold(`<code>${escapeHtml(code)}</code>`));
-  // 行内公式
+  // 行内公式（KaTeX 未就绪时先显示源码，katexNow 已在后台触发加载）
   s = s.replace(/\$([^$\n]+)\$/g, (m, tex) => {
+    const katex = katexNow();
+    if (!katex) return hold(escapeHtml(m));
     try {
       return hold(katex.renderToString(tex, { throwOnError: false, strict: 'ignore', output: 'html' }));
     } catch (e) { return hold(escapeHtml(m)); }

@@ -23,6 +23,17 @@ for (const [name, [tail, target]] of Object.entries(CASES)) {
     v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: d }, selection: { anchor: 0 } });
   }, DOC);
   await new Promise((r) => setTimeout(r, 700));
+  // 数学/mermaid 为按需懒加载：首次渲染完成前布局会变动，必须等 widget 就绪后再测量点击
+  if (tail.includes('$$') || /\$\S/.test(tail)) {
+    await page.waitForFunction(
+      () => ![...document.querySelectorAll('.ink-math')].some((el) => !el.firstChild),
+      { timeout: 10000 }
+    ).catch(() => {});
+  }
+  if (tail.includes('mermaid')) {
+    await page.waitForSelector('.ink-mermaid.ready', { timeout: 10000 }).catch(() => {});
+  }
+  await new Promise((r) => setTimeout(r, 200));
   const out = await page.evaluate((tgt) => {
     const v = window.InkFlow.app.view;
     const doc = v.state.doc;

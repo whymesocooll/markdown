@@ -47,11 +47,16 @@ fs.mkdirSync(r(outDir), { recursive: true });
 const options = {
   entryPoints: [r('src/main.js')],
   bundle: true,
-  format: 'iife',
+  // ESM + splitting：动态 import（mermaid / KaTeX / 代码语言包）生成独立 chunk 真正按需加载。
+  // 不能改回 IIFE——IIFE 会把所有动态导入内联进单文件，启动体积暴涨数 MB
+  format: 'esm',
+  splitting: true,
   target: ['es2021'],
   minify: !watch,
   sourcemap: watch ? 'inline' : false,
-  outfile: r(`${outDir}/app.js`),
+  outdir: r(outDir),
+  entryNames: 'app', // 入口固定输出为 app.js（outdir 模式下默认按源码文件名输出）
+
   loader: {
     '.woff': 'file',
     '.woff2': 'file',

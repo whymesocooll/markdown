@@ -1,11 +1,26 @@
 // 导出：Markdown -> HTML（含公式与代码高亮）-> 文件 / 打印 PDF
-import { marked } from 'marked';
-import hljs from 'highlight.js/lib/common';
-import katex from 'katex';
+// marked / highlight.js / KaTeX 均为按需加载：导出是低频操作，不进入启动包
 import { escapeHtml, slugify } from './utils.js';
 import { KATEX_CSS, HLJS_DARK_CSS, HLJS_LIGHT_CSS, DOC_CSS } from './gen-assets.js';
 import { renderMermaid } from './mermaid.js';
 import { isDesktop, desktopExportPdf } from './desktop.js';
+import { loadKatex } from './katex-loader.js';
+
+let depsPromise = null;
+function loadExportDeps() {
+  if (!depsPromise) {
+    depsPromise = Promise.all([
+      import('marked'),
+      import('highlight.js/lib/common'),
+      loadKatex()
+    ]).then(([mm, hm, katex]) => ({
+      marked: mm.marked || mm.default || mm,
+      hljs: hm.default || hm,
+      katex
+    })).catch((e) => { depsPromise = null; throw e; }); // 加载失败可重试
+  }
+  return depsPromise;
+}
 
 const MATH_TOKEN = (i) => `@@INKMATH${i}@@`;
 
@@ -56,13 +71,13 @@ function extractMath(md) {
   return { text: out.join('\n'), store };
 }
 
-function restoreMath(html, store) {
-  let s = html.replace(/<p>\s*@@INKMATH(\d+)@@\s*<\/p>/g, (m, i) => renderTex(store[Number(i)], true));
-  s = s.replace(/@@INKMATH(\d+)@@/g, (m, i) => renderTex(store[Number(i)], false));
+function restoreMath(html, store, katex) {
+  let s = html.replace(/<p>\s*@@INKMATH(\d+)@@\s*<\/p>/g, (m, i) => renderTex(store[Number(i)], true, katex));
+  s = s.replace(/@@INKMATH(\d+)@@/g, (m, i) => renderTex(store[Number(i)], false, katex));
   return s;
 }
 
-function renderTex(item, wrap) {
+function renderTex(item, wrap, katex) {
   if (!item) return '';
   try {
     const html = katex.renderToString(item.tex, {
@@ -75,7 +90,7 @@ function renderTex(item, wrap) {
 }
 
 let configured = false;
-function configureMarked() {
+function configureMarked(marked, hljs) {
   if (configured) return;
   configured = true;
   marked.use({
@@ -108,11 +123,12 @@ function configureMarked() {
   });
 }
 
-export function renderMarkdown(md) {
-  configureMarked();
+export async function renderMarkdown(md) {
+  const { marked, hljs, katex } = await loadExportDeps();
+  configureMarked(marked, hljs);
   const { text, store } = extractMath(md);
   const html = marked.parse(text);
-  return restoreMath(html, store);
+  return restoreMath(html, store, katex);
 }
 
 /* ---------- Mermaid：块 -> 占位 token -> 渲染为内联 SVG ---------- */
@@ -142,11 +158,12 @@ function extractMermaid(md) {
 
 /** 异步版：文档含 mermaid 时渲染为内联 SVG（无 mermaid 时结果与 renderMarkdown 一致） */
 export async function renderMarkdownAsync(md) {
-  configureMarked();
+  const { marked, hljs, katex } = await loadExportDeps();
+  configureMarked(marked, hljs);
   const { text: t1, store: mstore } = extractMath(md);
   const { text: t2, store: mmstore } = extractMermaid(t1);
   const html = marked.parse(t2);
-  let s = restoreMath(html, mstore);
+  let s = restoreMath(html, mstore, katex);
   for (let i = 0; i < mmstore.length; i++) {
     const svg = await renderMermaid(mmstore[i], 'light');
     s = s.replace(
@@ -157,8 +174,8 @@ export async function renderMarkdownAsync(md) {
   return s;
 }
 
-export function buildStandaloneHtml(md, { title = 'Document', theme = 'light' } = {}) {
-  const body = renderMarkdown(md);
+export async function buildStandaloneHtml(md, { title = 'Document', theme = 'light' } = {}) {
+  const body = await renderMarkdown(md);
   return wrapHtml(body, { title, theme });
 }
 

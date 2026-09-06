@@ -4,7 +4,8 @@ import { EditorView, Decoration, ViewPlugin } from '@codemirror/view';
 import { StateField, StateEffect } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
 import {
-  MathWidget, ImageWidget, HrWidget, BulletWidget, CheckboxWidget, TableWidget, MermaidWidget
+  MathWidget, ImageWidget, HrWidget, BulletWidget, CheckboxWidget, TableWidget, MermaidWidget,
+  widgetRelayout
 } from './widgets.js';
 
 const HIDE = Decoration.replace({});
@@ -379,7 +380,7 @@ export const livePreviewField = StateField.define({
   create: (state) => buildDeco(state),
   update(value, tr) {
     const selChanged = !tr.state.selection.eq(tr.startState.selection);
-    const forced = tr.effects.some((e) => e.is(refreshEffect) || e.is(sourceModeEffect) || e.is(readModeEffect));
+    const forced = tr.effects.some((e) => e.is(refreshEffect) || e.is(sourceModeEffect) || e.is(readModeEffect) || e.is(widgetRelayout));
     if (tr.docChanged || selChanged || forced) return buildDeco(tr.state);
     return value;
   },

@@ -23,16 +23,16 @@
     "@codemirror/view": "^6.43.8",
     "@lezer/highlight": "^1.2.3",
     "@lezer/markdown": "^1.7.2",
-    "codemirror": "^6.0.2",
+    "codemirror": "^6.0.2"
+  },
+  "devDependencies": {
+    "electron": "^43.3.0",
+    "electron-packager": "^17.1.2",
     "esbuild": "^0.28.2",
     "highlight.js": "^11.11.1",
     "katex": "^0.18.2",
     "marked": "^18.0.9",
     "mermaid": "^11.16.1",
     "puppeteer-core": "^25.5.0"
-  },
-  "devDependencies": {
-    "electron": "^43.3.0",
-    "electron-packager": "^17.1.2"
   }
 }

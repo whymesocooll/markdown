@@ -50,7 +50,7 @@ Edge 路径硬编码在测试里：`C:/Program Files (x86)/Microsoft/Edge/Applic
 
 ## 架构
 
-模块均为 ES module，由 esbuild 从 `src/main.js` 打包为 IIFE（`dist/app.js`），`public/index.html` 原样复制到 dist。
+模块均为 ES module，由 esbuild 从 `src/main.js` 以 **ESM + splitting** 打包（入口 `dist/app.js`，动态 import 生成独立 chunk 按需加载；**不要改回 IIFE**——IIFE 会把所有动态导入内联进单文件），`public/index.html` 原样复制到 dist。
 
 ### 所见即所得核心（本项目的关键机制）
 

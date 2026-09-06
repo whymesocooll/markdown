@@ -1,10 +1,28 @@
 // 实时预览用的各类 Widget（数学公式 / 图片 / 表格 / 分隔线 / 任务勾选框 / 列表符号）
 import { WidgetType } from '@codemirror/view';
-import katex from 'katex';
+import { StateEffect } from '@codemirror/state';
+import { loadKatex, katexNow } from './katex-loader.js';
 import { sanitizeHtml, escapeHtml } from './utils.js';
 import { renderInline } from './inline-md.js';
 import { insertRow, deleteRow, insertCol, deleteCol, setColAlign, setCell } from './table-edit.js';
 import { loadMermaid, mermaidTheme, renderMermaid } from './mermaid.js';
+
+// 异步 widget（公式/KaTeX、mermaid SVG、表格单元格公式）内容就绪后块高会变化，
+// 而 CM 的 measure 只在「内容元素总高变化」或「DOM 真正更新」后重读行高——仅 dispatch
+// 效果不足以触发重测。因此渲染结果统一缓存并纳入 widget 的 eq 判定：就绪后经
+// widgetRelayout 触发装饰重建，新旧 widget 因 eq 不相等而被 CM 替换 DOM，块高随之一并
+// 被正确测量（IIFE 单文件构建因渲染恰好在首次测量前完成而掩盖了此问题，ESM 按需加载
+// 后必然暴露：点击 widget 下方内容会错位一行）。
+export const widgetRelayout = StateEffect.define();
+function relayout(view) {
+  view.dispatch({ effects: widgetRelayout.of(null) });
+}
+// 简单 FIFO 缓存：key -> 渲染结果字符串
+function cachePut(map, key, val, max) {
+  if (map.has(key)) map.delete(key);
+  map.set(key, val);
+  if (map.size > max) map.delete(map.keys().next().value);
+}
 
 /** 把光标送回源码位置：点击渲染结果即可编辑 */
 function editOnClick(dom, view, pos) {
@@ -16,30 +34,50 @@ function editOnClick(dom, view, pos) {
   });
 }
 
+/* ---------- KaTeX 渲染缓存（tex\0display -> html） ---------- */
+const mathCache = new Map();
+
 export class MathWidget extends WidgetType {
   constructor(tex, display, pos) {
     super();
     this.tex = tex;
     this.display = display;
     this.pos = pos;
+    this.html = mathCache.get(tex + '\0' + display) || null;
   }
-  eq(other) { return other.tex === this.tex && other.display === this.display; }
+  eq(other) { return other.tex === this.tex && other.display === this.display && other.html === this.html; }
   toDOM(view) {
     const el = document.createElement(this.display ? 'div' : 'span');
     el.className = this.display ? 'ink-math ink-math-block' : 'ink-math ink-math-inline';
-    try {
-      el.innerHTML = katex.renderToString(this.tex, {
-        displayMode: this.display,
-        throwOnError: false,
-        strict: 'ignore',
-        output: 'html',
-        trust: false
-      });
-    } catch (err) {
-      el.classList.add('ink-math-error');
-      el.textContent = (this.display ? '$$' : '$') + this.tex + (this.display ? '$$' : '$');
-    }
     editOnClick(el, view, this.pos);
+    if (this.html != null) { // 缓存命中：同步渲染，无占位闪烁
+      el.innerHTML = this.html;
+      return el;
+    }
+    const errorText = (this.display ? '$$' : '$') + this.tex + (this.display ? '$$' : '$');
+    loadKatex().then((katex) => {
+      let html;
+      try {
+        html = katex.renderToString(this.tex, {
+          displayMode: this.display,
+          throwOnError: false,
+          strict: 'ignore',
+          output: 'html',
+          trust: false
+        });
+      } catch (err) {
+        el.classList.add('ink-math-error');
+        el.textContent = errorText;
+        return;
+      }
+      cachePut(mathCache, this.tex + '\0' + this.display, html, 200);
+      if (el.isConnected) el.innerHTML = html;
+      relayout(view); // 重建 widget（eq 因 html 就绪而不相等）→ CM 替换 DOM 并重新测量
+    }).catch(() => {
+      if (!el.isConnected) return;
+      el.classList.add('ink-math-error');
+      el.textContent = errorText;
+    });
     return el;
   }
   ignoreEvent() { return false; }
@@ -246,14 +284,26 @@ export class TableWidget extends WidgetType {
     this.src = src;
     this.from = from;
     this.lineStarts = lineStarts; // 行号 -> 文档偏移
+    this.needsKatex = src.indexOf('$') > -1; // 单元格含行内公式
+    this.katexReady = this.needsKatex && !!katexNow(); // 就绪状态纳入 eq：加载完成后重建重绘
   }
-  eq(o) { return o.src === this.src && o.from === this.from; }
+  eq(o) { return o.src === this.src && o.from === this.from && o.katexReady === this.katexReady; }
   toDOM(view) {
     this.view = view;
     const wrap = document.createElement('div');
     wrap.className = 'ink-table-wrap';
-    const html = tableToHtml(this.src, 0);
-    wrap.innerHTML = sanitizeHtml(html || `<pre>${escapeHtml(this.src)}</pre>`);
+    const paint = () => {
+      const html = tableToHtml(this.src, 0);
+      wrap.innerHTML = sanitizeHtml(html || `<pre>${escapeHtml(this.src)}</pre>`);
+    };
+    paint();
+    // 单元格行内公式依赖 KaTeX：未就绪时 renderInline 先显示源码，加载完成后重建重绘
+    if (this.needsKatex && !this.katexReady) {
+      loadKatex().then(() => {
+        if (!wrap.isConnected) return;
+        relayout(view);
+      }).catch(() => {});
+    }
     wrap.addEventListener('mousedown', (e) => {
       if (view.state.readOnly) return; // 阅读模式：不进入单元格编辑，允许原生选择
       if (e.button === 2) { e.preventDefault(); return; } // 右键：阻止 CM 的指针选择（会把光标移到表格块），留给自定义菜单
@@ -359,30 +409,42 @@ export class CodeInfoWidget extends WidgetType {
 }
 
 /* ---------- Mermaid 图 ---------- */
+const mermaidCache = new Map(); // code\0theme -> svg
+
 export class MermaidWidget extends WidgetType {
   constructor(code, from) {
     super();
     this.code = code;
     this.from = from;
     this.theme = mermaidTheme(); // 主题变化时 eq 不相等 -> 重建重渲染
+    this.svg = mermaidCache.get(code + '\0' + this.theme) || null;
   }
-  eq(o) { return o.code === this.code && o.from === this.from && o.theme === this.theme; }
+  eq(o) { return o.code === this.code && o.from === this.from && o.theme === this.theme && o.svg === this.svg; }
   toDOM(view) {
     const el = document.createElement('div');
     el.className = 'ink-mermaid';
-    el.textContent = '🔄 渲染图中…';
     editOnClick(el, view, this.from);
+    if (this.svg != null) { // 缓存命中：同步显示，滚动回视口无需重渲染
+      el.innerHTML = this.svg;
+      el.classList.add('ready');
+      return el;
+    }
+    el.textContent = '🔄 渲染图中…';
     loadMermaid()
       .then(() => renderMermaid(this.code, this.theme))
       .then((svg) => {
-        if (!el.isConnected) return;
-        el.innerHTML = svg;
-        el.classList.add('ready');
+        cachePut(mermaidCache, this.code + '\0' + this.theme, svg, 30);
+        if (el.isConnected) {
+          el.innerHTML = svg;
+          el.classList.add('ready');
+        }
+        relayout(view); // 重建 widget（eq 因 svg 就绪而不相等）→ CM 替换 DOM 并重新测量
       })
       .catch((err) => {
         if (!el.isConnected) return;
         el.textContent = 'Mermaid 渲染失败：' + (err && err.message ? err.message : String(err)) + '（点击查看源码）';
         el.classList.add('error');
+        relayout(view); // 错误文本同样改变块高
       });
     return el;
   }
