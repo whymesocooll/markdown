@@ -47,9 +47,10 @@ export const readOnlyComp = new Compartment();
 export const spellcheckComp = new Compartment();
 
 export function createEditor({ parent, doc = '', onChange, onSelection, extra = [] }) {
+  // 注意：直接透传 update 对象，不要在这里做 doc.toString()——那会每次按键序列化整个文档
   const listener = EditorView.updateListener.of((u) => {
-    if (u.docChanged && onChange) onChange(u.state.doc.toString(), u);
-    if ((u.selectionSet || u.docChanged) && onSelection) onSelection(u.state);
+    if (u.docChanged && onChange) onChange(u);
+    if ((u.selectionSet || u.docChanged) && onSelection) onSelection(u);
   });
 
   const state = EditorState.create({

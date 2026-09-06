@@ -357,7 +357,7 @@ async function checkpoint({ notifyFailure = true } = {}) {
   app.checkpointState = 'saved';
   app.checkpointError = null;
   F.setLastDocId(app.docId);
-  renderFiles();
+  refreshVaultSection();
   renderSaveState();
   return r;
 }
@@ -462,14 +462,18 @@ function buildOutline() {
   }
   outline = items;
   const panel = $('#panelOutline');
-  if (!items.length) {
-    panel.innerHTML = '<div class="empty-tip">还没有标题。<br>用 # 开头写个标题，大纲会自动出现。</div>';
-    return;
+  const html = items.length
+    ? items.map((it, i) =>
+        `<button class="outline-item" data-level="${it.level}" data-idx="${i}" title="${escapeAttr(it.title)}">${escapeAttr(it.title)}</button>`
+      ).join('')
+    : '<div class="empty-tip">还没有标题。<br>用 # 开头写个标题，大纲会自动出现。</div>';
+  if (panel._inkHtml !== html) { // 标题未变化时跳过 DOM 重建（打字期间每键都会走到这里）
+    panel._inkHtml = html;
+    panel.innerHTML = html;
   }
-  panel.innerHTML = items.map((it, i) =>
-    `<button class="outline-item" data-level="${it.level}" data-idx="${i}" title="${escapeAttr(it.title)}">${escapeAttr(it.title)}</button>`
-  ).join('');
 }
+// 打字期间大纲扫描是 O(文档行数)，防抖执行
+const scheduleOutline = debounce(buildOutline, 250);
 function escapeAttr(s) {
   return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
@@ -484,7 +488,14 @@ function highlightOutline() {
 /* ---------------- 文档库 ---------------- */
 function renderFiles() {
   const panel = $('#panelFiles');
-  panel.innerHTML = recentSectionHtml() + treeSectionHtml() + vaultSectionHtml();
+  panel.innerHTML = recentSectionHtml() + treeSectionHtml() + `<div id="vaultSection">${vaultSectionHtml()}</div>`;
+}
+
+// checkpoint 后只需更新「本次会话」暂存列表——全量 renderFiles 会连带重建文件树，
+// 打字期间每 0.7s 重建一次树 DOM 代价过高（且会丢失筛选输入框焦点）
+function refreshVaultSection() {
+  const el = $('#vaultSection');
+  if (el) el.innerHTML = vaultSectionHtml();
 }
 
 function treeSectionHtml() {
@@ -999,14 +1010,17 @@ async function boot() {
     parent: $('#editor'),
     doc: '',
     extra: [pasteHandler],
-    onChange: () => {
-      markDirty(text() !== app.savedText);
-      buildOutline();
-      updateStatus();
+    onChange: (u) => {
+      const doc = u.state.doc;
+      // 长度不同必然脏；等长时才需要序列化比较，避免每次按键都物化整个文档字符串
+      markDirty(doc.length !== app.savedText.length || doc.toString() !== app.savedText);
+      scheduleOutline();
+      updateStatusPos();
+      scheduleStatusCounts();
       autosave();
     },
     onSelection: () => {
-      updateStatus();
+      updateStatusPos();
       highlightOutline();
       if (settings.typewriter) {
         requestAnimationFrame(() => {
@@ -1094,17 +1108,26 @@ async function boot() {
   };
 }
 
-function updateStatus() {
+let statusCountsTimer = null;
+function updateStatusPos() {
   const state = app.view.state;
-  const t = state.doc.toString();
-  const { words, chars } = countWords(t);
   const head = state.selection.main.head;
   const line = state.doc.lineAt(head);
+  $('#stPos').textContent = `行 ${line.number} : 列 ${head - line.from + 1}`;
+}
+function updateStatusCounts() {
+  const t = app.view.state.doc.toString();
+  const { words, chars } = countWords(t);
   $('#stWords').textContent = `${words} 词`;
   $('#stChars').textContent = `${chars} 字符`;
-  $('#stPos').textContent = `行 ${line.number} : 列 ${head - line.from + 1}`;
   $('#stRead').textContent = `约 ${Math.max(1, Math.round(words / 300))} 分钟`;
 }
+// 全文字数统计是 O(n)，打字期间防抖刷新；行号/列号开销极小，随选区即时更新
+function scheduleStatusCounts() {
+  clearTimeout(statusCountsTimer);
+  statusCountsTimer = setTimeout(updateStatusCounts, 250);
+}
+function updateStatus() { updateStatusPos(); updateStatusCounts(); }
 
 /* ---------------- 阅读模式 / 编辑模式 ---------------- */
 // 阅读模式：内容只读、点击不显示源码、隐藏光标；编辑模式恢复正常编辑
