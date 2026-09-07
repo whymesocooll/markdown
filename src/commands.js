@@ -123,18 +123,19 @@ export function insertText(view, text, caretOffset = null) {
   return true;
 }
 
-/** 在独立块中插入（自动补前后空行） */
+/** 在独立块中插入（块独占行：行内还有内容时自动补换行隔开，否则围栏会与正文粘连） */
 export function insertBlock(view, text, caretOffset = null) {
   if (view.state.readOnly) return false; // 阅读模式：不修改内容
   const state = view.state;
   const r = state.selection.main;
-  const line = state.doc.lineAt(r.from);
-  const atLineStart = r.from === line.from;
-  const emptyLine = line.text.trim() === '';
-  let prefix = '';
-  if (!emptyLine) prefix = atLineStart ? '' : '\n';
-  if (!emptyLine && !atLineStart) prefix = '\n\n';
-  const insert = prefix + text;
+  const startLine = state.doc.lineAt(r.from);
+  const endLine = state.doc.lineAt(r.to);
+  const before = state.doc.sliceString(startLine.from, r.from);
+  const after = state.doc.sliceString(r.to, endLine.to);
+  const prefix = before.trim() ? '\n' : '';
+  // after 非空说明插入点后同行还有内容，需换行隔开；文本自带尾部换行时无需重复
+  const suffix = after.trim() && !text.endsWith('\n') ? '\n' : '';
+  const insert = prefix + text + suffix;
   const pos = r.from + prefix.length + (caretOffset == null ? text.length : caretOffset);
   view.dispatch({
     changes: { from: r.from, to: r.to, insert },

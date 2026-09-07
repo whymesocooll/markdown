@@ -7,7 +7,7 @@ const ALIGN_MARK = { left: ':---', center: ':---:', right: '---:' };
 export function splitRow(line) {
   let s = line.trim();
   if (s.startsWith('|')) s = s.slice(1);
-  if (s.endsWith('|')) s = s.slice(0, -1);
+  if (s.endsWith('|') && !s.endsWith('\\|')) s = s.slice(0, -1); // 行尾转义竖线是单元格内容，不是边界
   const cells = [];
   let cur = '';
   for (let i = 0; i < s.length; i++) {

@@ -38,10 +38,12 @@ npm run smoke:desktop    # Electron 冒烟：preload 桥 + 编辑器挂载 + 文
 # 1. 先起静态服务器（测试默认访问 http://127.0.0.1:8123/index.html，可用 URL 环境变量覆盖）
 python -m http.server 8123 -d dist
 # 2. 另开终端
+node test/run.mjs       # 一键串行跑全部回归（自带静态服务器，遇错即停）
 node test/smoke.mjs     # 主冒烟测试：渲染、命令、导出、主题（退出码 0/1 表示通过/失败）
 node test/tree.mjs      # 文件树：桩 showDirectoryPicker 验证树渲染/懒加载/打开文件
 node test/table.mjs     # 表格编辑：单元格内联编辑、右键菜单增删行列/对齐
 node test/mermaid.mjs   # Mermaid：widget 渲染、光标回源码、导出内联 SVG
+node test/regression.mjs # 缺陷回归：标题菜单、块插入换行、widget 点击定位、监听器、saveState
 node test/diag.mjs      # 诊断：抓页面错误、检查 window.InkFlow
 node test/diag2.mjs
 ```
@@ -81,7 +83,7 @@ CodeMirror 用 `getBoundingClientRect`（不含 margin 的边框盒）建坐标�
 
 ### 主题
 
-配色全部走 CSS 变量 + `<html data-theme>`；高亮样式类（`.tok-*`）引用变量，切换主题无需重建编辑器。共 6 套主题：`dark`（墨夜）/`light`（素白）为默认，另有 `dracula`（德古拉）、`nord`（北极光）、`tokyo-night`（东京之夜）、`solarized-light`（日光），主题块定义在 `styles.css` 顶部的 `[data-theme="..."]` 里（每套 29 个变量，含 `--inline-code`）。展示名映射在 `main.js` 的 `THEME_NAMES`；工具栏主题循环按钮顺序 `['dark','dracula','nord','tokyo-night','light','solarized-light','auto']`。**导出 HTML 只支持暗/亮两套文档样式**，新主题经 `themeFamily()` 归入 dark/light 再传给导出器，不要直接传新主题名。默认值在 `main.js` 的 `settings.defaults`，持久化于 `localStorage['inkflow:settings']`（无校验，新主题值可直接生效）。源码模式由 `sourceModeField` StateField 控制。
+配色全部走 CSS 变量 + `<html data-theme>`；高亮样式类（`.tok-*`）引用变量，切换主题无需重建编辑器。共 9 套主题：`dark`（墨夜）/`light`（素白）为默认，另有 `dracula`（德古拉）、`nord`（北极光）、`tokyo-night`（东京之夜）、`ink-wash`（墨池青黛）、`carbon-lilac`（碳素紫晶）、`paper-saffron`（藏经纸）、`solarized-light`（日光），主题块定义在 `styles.css` 顶部的 `[data-theme="..."]` 里（每套 31 个变量，含 `--inline-code`）。展示名映射在 `main.js` 的 `THEME_NAMES`；工具栏主题循环按钮顺序 `['dark','dracula','nord','tokyo-night','ink-wash','carbon-lilac','paper-saffron','light','solarized-light','auto']`。**导出 HTML 只支持暗/亮两套文档样式**，新主题经 `themeFamily()` 归入 dark/light 再传给导出器，不要直接传新主题名（mermaid 图表配色会随该值渲染成对应深浅）。默认值在 `main.js` 的 `settings.defaults`，持久化于 `localStorage['inkflow:settings']`（无校验，新主题值可直接生效）。源码模式由 `sourceModeField` StateField 控制。
 
 ## 关键注意点
 

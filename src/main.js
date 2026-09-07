@@ -595,7 +595,14 @@ async function toggleDir(path) {
 }
 
 async function openFolderTree() {
-  const h = await FT.openFolder();
+  let h;
+  try {
+    h = await FT.openFolder();
+  } catch (e) {
+    if (e && e.name === 'AbortError') return; // 用户取消选择器
+    toast('打开文件夹失败：' + (e && e.message ? e.message : e), { type: 'error', duration: 7000 });
+    return;
+  }
   if (!h) return;
   await loadTreeFromRoot(h);
   renderFiles();
@@ -710,6 +717,7 @@ async function newDoc() {
   app.handle = null;
   app.path = '';
   app.mtime = null;
+  app.saveState = 'idle';
   setTitle('未命名.md', '');
   setDoc(app.view, '');
   app.savedText = '';
@@ -754,6 +762,7 @@ async function loadContent(name, content, handle, mtime = null) {
   app.handle = handle || null;
   app.path = app.handle?.path || '';
   app.mtime = app.handle ? mtime : null;
+  app.saveState = 'idle'; // 清掉上一文档残留的 conflict/failed 状态
   setTitle(name, app.path);
   if (app.path) recordRecentFile(app.path, app.name);
   setDoc(app.view, content);
@@ -853,7 +862,8 @@ function buildToolbar() {
   ];
   tb.innerHTML = items.map(([act, icon, title]) =>
     act === '|' ? '<div class="divider"></div>'
-      : `<button class="icon-btn" data-act="${act}" title="${title}">${icon}</button>`
+      // heading 按钮会弹出菜单，需带 data-menu-btn，否则 document 的点击关闭监听会把菜单立即关掉
+      : `<button class="icon-btn" data-act="${act}"${act === 'heading' ? ' data-menu-btn' : ''} title="${title}">${icon}</button>`
   ).join('');
   $('#btnSidebar').innerHTML = ICON.sidebar;
   $('#btnSettings').innerHTML = ICON.settings;
@@ -1103,7 +1113,7 @@ async function boot() {
   // 供自动化测试 / 高级用户使用的调试入口
   window.InkFlow = {
     app, F, buildStandaloneHtml, buildStandaloneHtmlAsync, renderMarkdown, panguSpacing, FT, treeState,
-    renderMermaid, loadMermaid, finishSessionBeforeClose,
+    renderMermaid, loadMermaid, finishSessionBeforeClose, loadContent,
     setReadMode, toggleReadMode, isReadMode
   };
 }
@@ -1242,6 +1252,19 @@ function wireEvents() {
     });
     app.view.focus();
   });
+  // 文件树搜索（input 事件委托；重渲染后恢复焦点与光标）。只注册一次，
+  // 不能放进下方 click 处理器内——那会随每次点击重复注册
+  $('#panelFiles').addEventListener('input', (e) => {
+    if (e.target.id !== 'treeSearch') return;
+    treeState.filter = e.target.value.trim();
+    renderFiles();
+    const inp = $('#treeSearch');
+    if (inp) {
+      inp.focus();
+      const end = inp.value.length;
+      inp.setSelectionRange(end, end);
+    }
+  });
   $('#panelFiles').addEventListener('click', async (e) => {
     const recentDel = e.target.closest('[data-recent-del]');
     if (recentDel) {
@@ -1273,19 +1296,7 @@ function wireEvents() {
       }
       return;
     }
-    // 文件树搜索（input 事件冒泡委托；重渲染后恢复焦点与光标）
-  $('#panelFiles').addEventListener('input', (e) => {
-    if (e.target.id !== 'treeSearch') return;
-    treeState.filter = e.target.value.trim();
-    renderFiles();
-    const inp = $('#treeSearch');
-    if (inp) {
-      inp.focus();
-      const end = inp.value.length;
-      inp.setSelectionRange(end, end);
-    }
-  });
-  // 文件夹树
+    // 文件树搜索监听已在上方注册，这里只处理点击路由
     if (e.target.closest('.tree-open')) { openFolderTree(); return; }
     const tdir = e.target.closest('.tree-dir');
     if (tdir) { toggleDir(tdir.dataset.toggle); return; }

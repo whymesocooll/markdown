@@ -106,11 +106,12 @@ export function parseThemeBlocks(css) {
     if (isDark) targets.push('dark');
     if (isLight) targets.push('light');
     if (!targets.length) targets.push('dark', 'light'); // 联合选择器（.theme-dark, .theme-light {}）与通用块进两个池
-    const declRe = /(--[\w-]+)\s*:\s*([^;]+);/g;
-    let d;
-    while ((d = declRe.exec(inner))) {
-      const key = d[1];
-      const val = d[2].trim();
+    // 按分号切分声明，块尾不带分号的最后一个变量也能采到
+    for (const decl of inner.split(';')) {
+      const m = /^\s*(--[\w-]+)\s*:\s*(.+?)\s*$/.exec(decl);
+      if (!m) continue;
+      const key = m[1];
+      const val = m[2].trim();
       const known = MAP_VALUES.has(key) || key.startsWith('--color-') || key.startsWith('--ctp-') || key.startsWith('--base-');
       for (const t of targets) {
         if (!out[t]) out[t] = {};

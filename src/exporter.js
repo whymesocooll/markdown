@@ -157,7 +157,7 @@ function extractMermaid(md) {
 }
 
 /** 异步版：文档含 mermaid 时渲染为内联 SVG（无 mermaid 时结果与 renderMarkdown 一致） */
-export async function renderMarkdownAsync(md) {
+export async function renderMarkdownAsync(md, { theme = 'light' } = {}) {
   const { marked, hljs, katex } = await loadExportDeps();
   configureMarked(marked, hljs);
   const { text: t1, store: mstore } = extractMath(md);
@@ -165,7 +165,8 @@ export async function renderMarkdownAsync(md) {
   const html = marked.parse(t2);
   let s = restoreMath(html, mstore, katex);
   for (let i = 0; i < mmstore.length; i++) {
-    const svg = await renderMermaid(mmstore[i], 'light');
+    // 图表配色跟随文档色系，避免暗色文档里嵌入浅色图表
+    const svg = await renderMermaid(mmstore[i], theme === 'dark' ? 'dark' : 'light');
     s = s.replace(
       new RegExp(`<p>\\s*${MERMAID_TOKEN(i)}\\s*<\\/p>`),
       `<div class="mermaid-block">${svg}</div>`
@@ -181,7 +182,7 @@ export async function buildStandaloneHtml(md, { title = 'Document', theme = 'lig
 
 /** 异步版：mermaid 块渲染为内联 SVG，其余与 buildStandaloneHtml 一致 */
 export async function buildStandaloneHtmlAsync(md, { title = 'Document', theme = 'light' } = {}) {
-  const body = await renderMarkdownAsync(md);
+  const body = await renderMarkdownAsync(md, { theme });
   return wrapHtml(body, { title, theme });
 }
 

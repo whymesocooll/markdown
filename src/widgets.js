@@ -45,7 +45,9 @@ export class MathWidget extends WidgetType {
     this.pos = pos;
     this.html = mathCache.get(tex + '\0' + display) || null;
   }
-  eq(other) { return other.tex === this.tex && other.display === this.display && other.html === this.html; }
+  // pos 必须参与 eq：CM 在 eq 相等时会复用旧 DOM（连同旧 editOnClick 闭包），
+  // 上方文本编辑后点击会把光标送回过期位置
+  eq(other) { return other.tex === this.tex && other.display === this.display && other.pos === this.pos && other.html === this.html; }
   toDOM(view) {
     const el = document.createElement(this.display ? 'div' : 'span');
     el.className = this.display ? 'ink-math ink-math-block' : 'ink-math ink-math-inline';
@@ -91,7 +93,7 @@ export class ImageWidget extends WidgetType {
     this.title = title || '';
     this.pos = pos;
   }
-  eq(o) { return o.url === this.url && o.alt === this.alt && o.title === this.title; }
+  eq(o) { return o.url === this.url && o.alt === this.alt && o.title === this.title && o.pos === this.pos; }
   toDOM(view) {
     const wrap = document.createElement('span');
     wrap.className = 'ink-img';
@@ -119,7 +121,7 @@ export class ImageWidget extends WidgetType {
 
 export class HrWidget extends WidgetType {
   constructor(pos) { super(); this.pos = pos; }
-  eq() { return true; }
+  eq(o) { return o.pos === this.pos; }
   toDOM(view) {
     const el = document.createElement('div');
     el.className = 'ink-hr';
