@@ -1,6 +1,6 @@
 // 导出：Markdown -> HTML（含公式与代码高亮）-> 文件 / 打印 PDF
 // marked / highlight.js / KaTeX 均为按需加载：导出是低频操作，不进入启动包
-import { escapeHtml, slugify } from './utils.js';
+import { escapeHtml, slugify, collectHeadings } from './utils.js';
 import { KATEX_CSS, HLJS_DARK_CSS, HLJS_LIGHT_CSS, DOC_CSS } from './gen-assets.js';
 import { renderMermaid } from './mermaid.js';
 import { isDesktop, desktopExportPdf } from './desktop.js';
@@ -23,6 +23,66 @@ function loadExportDeps() {
 }
 
 const MATH_TOKEN = (i) => `@@INKMATH${i}@@`;
+
+/** [toc] 行替换为按层级缩进的超链接列表（与编辑器渲染的目录块一致） */
+function replaceToc(md) {
+  const lines = String(md).split('\n');
+  let fence = null;
+  let found = false;
+  for (const line of lines) {
+    const fm = /^\s{0,3}(```+|~~~+)/.exec(line);
+    if (fence) { if (fm && line.trim().startsWith(fence)) fence = null; continue; }
+    if (fm) { fence = fm[1]; continue; }
+    if (/^\s{0,3}\[toc\]\s*$/i.test(line)) { found = true; break; }
+  }
+  if (!found) return md;
+  const headings = collectHeadings(lines);
+  const list = headings.map((h) =>
+    '  '.repeat(h.level - 1) + '- [' + h.title.replace(/[\[\]]/g, '') + '](#' + slugify(h.title) + ')'
+  ).join('\n');
+  fence = null;
+  return lines.map((line) => {
+    const fm = /^\s{0,3}(```+|~~~+)/.exec(line);
+    if (fence) { if (fm && line.trim().startsWith(fence)) fence = null; return line; }
+    if (fm) { fence = fm[1]; return line; }
+    if (/^\s{0,3}\[toc\]\s*$/i.test(line)) return list;
+    return line;
+  }).join('\n');
+}
+
+/** 预提取脚注：定义行必须先移除——marked 会把 [^x]: text 当作链接引用定义吞掉 */
+function extractFootnotes(md) {
+  const lines = String(md).split('\n');
+  const defs = [];
+  const out = [];
+  let fence = null;
+  for (const line of lines) {
+    const fm = /^\s{0,3}(```+|~~~+)/.exec(line);
+    if (fence) { out.push(line); if (fm && line.trim().startsWith(fence)) fence = null; continue; }
+    if (fm) { fence = fm[1]; out.push(line); continue; }
+    const dm = /^\s{0,3}\[\^([^\]\s]+)\]:\s*(.*)$/.exec(line);
+    if (dm) { defs.push({ label: dm[1], body: dm[2] }); continue; }
+    out.push(line);
+  }
+  return { md: out.join('\n'), defs };
+}
+
+/** 脚注：正文引用替换为上标链接（按定义顺序编号），定义渲染后聚到文末 */
+function renderFootnotes(html, defs, marked) {
+  if (!defs.length) return html;
+  const num = new Map();
+  defs.forEach((d, i) => num.set(d.label, i + 1));
+  let next = defs.length + 1;
+  html = html.replace(/\[\^([^\]\s]+)\]/g, (m, label) => {
+    if (!num.has(label)) num.set(label, next++);
+    const n = num.get(label);
+    return `<sup class="ink-fn-ref"><a href="#fn-${n}">[${n}]</a></sup>`;
+  });
+  const notes = defs.map((d) =>
+    `<p class="ink-fn-note" id="fn-${num.get(d.label)}"><span class="ink-fn-label">[${num.get(d.label)}]</span> ${marked.parse(d.body || '').trim()}</p>`
+  );
+  return html + `<hr class="ink-fn-rule"><div class="ink-footnotes">${notes.join('\n')}</div>`;
+}
 
 function extractMath(md) {
   const store = [];
@@ -126,9 +186,10 @@ function configureMarked(marked, hljs) {
 export async function renderMarkdown(md) {
   const { marked, hljs, katex } = await loadExportDeps();
   configureMarked(marked, hljs);
-  const { text, store } = extractMath(md);
+  const fn = extractFootnotes(replaceToc(md));
+  const { text, store } = extractMath(fn.md);
   const html = marked.parse(text);
-  return restoreMath(html, store, katex);
+  return renderFootnotes(restoreMath(html, store, katex), fn.defs, marked);
 }
 
 /* ---------- Mermaid：块 -> 占位 token -> 渲染为内联 SVG ---------- */
@@ -160,10 +221,11 @@ function extractMermaid(md) {
 export async function renderMarkdownAsync(md, { theme = 'light' } = {}) {
   const { marked, hljs, katex } = await loadExportDeps();
   configureMarked(marked, hljs);
-  const { text: t1, store: mstore } = extractMath(md);
+  const fn = extractFootnotes(replaceToc(md));
+  const { text: t1, store: mstore } = extractMath(fn.md);
   const { text: t2, store: mmstore } = extractMermaid(t1);
   const html = marked.parse(t2);
-  let s = restoreMath(html, mstore, katex);
+  let s = renderFootnotes(restoreMath(html, mstore, katex), fn.defs, marked);
   for (let i = 0; i < mmstore.length; i++) {
     // 图表配色跟随文档色系，避免暗色文档里嵌入浅色图表
     const svg = await renderMermaid(mmstore[i], theme === 'dark' ? 'dark' : 'light');

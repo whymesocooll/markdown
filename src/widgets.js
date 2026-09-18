@@ -1,5 +1,5 @@
 // 实时预览用的各类 Widget（数学公式 / 图片 / 表格 / 分隔线 / 任务勾选框 / 列表符号）
-import { WidgetType } from '@codemirror/view';
+import { WidgetType, EditorView } from '@codemirror/view';
 import { StateEffect } from '@codemirror/state';
 import { loadKatex, katexNow } from './katex-loader.js';
 import { sanitizeHtml, escapeHtml } from './utils.js';
@@ -396,6 +396,38 @@ export class TableWidget extends WidgetType {
     v.dispatch({ changes: { from, to, insert: ns } });
     v.focus();
   }
+}
+
+/* ---------- [toc] 目录块 ---------- */
+export class TocWidget extends WidgetType {
+  constructor(sig, headings, from) {
+    super();
+    this.sig = sig;       // 标题签名：标题集合变化时重建
+    this.headings = headings; // [{ level, title, pos }]
+    this.from = from;
+  }
+  eq(o) { return o.sig === this.sig && o.from === this.from; }
+  toDOM(view) {
+    const el = document.createElement('div');
+    el.className = 'ink-toc';
+    el.innerHTML = this.headings.length
+      ? this.headings.map((h) =>
+          `<button class="ink-toc-item" data-pos="${h.pos}" style="padding-left:${(h.level - 1) * 16 + 6}px"><span class="ink-toc-lv">H${h.level}</span>${escapeHtml(h.title)}</button>`
+        ).join('')
+      : '<span class="empty-tip">暂无标题</span>';
+    // 与 editOnClick 同款 mousedown 模式：preventDefault 挡住 CM 的指针选区，再送光标到标题行
+    el.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      const b = e.target.closest ? e.target.closest('.ink-toc-item') : null;
+      if (!b) return;
+      e.preventDefault();
+      const pos = Number(b.dataset.pos);
+      view.dispatch({ selection: { anchor: pos }, effects: EditorView.scrollIntoView(pos, { y: 'start', yMargin: 60 }) });
+      view.focus();
+    });
+    return el;
+  }
+  ignoreEvent() { return false; }
 }
 
 /* ---------- Mermaid 图 ---------- */

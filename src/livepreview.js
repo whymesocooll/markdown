@@ -3,8 +3,9 @@
 import { EditorView, Decoration, ViewPlugin } from '@codemirror/view';
 import { StateField, StateEffect } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
+import { collectHeadings } from './utils.js';
 import {
-  MathWidget, ImageWidget, HrWidget, BulletWidget, CheckboxWidget, TableWidget, MermaidWidget,
+  MathWidget, ImageWidget, HrWidget, BulletWidget, CheckboxWidget, TableWidget, MermaidWidget, TocWidget,
   widgetRelayout
 } from './widgets.js';
 
@@ -35,6 +36,14 @@ const CODE_CTX = /^(FencedCode|CodeBlock|CodeText|InlineCode|HTMLBlock|HTMLTag|C
 function inCodeContext(tree, pos) {
   let n = tree.resolveInner(pos, 1);
   for (let c = n; c; c = c.parent) if (CODE_CTX.test(c.name)) return true;
+  return false;
+}
+
+// 脚注用更窄的代码上下文判断：[^x] 会被 Lezer 解析成 Link 节点，CODE_CTX 含 Link 会误判
+const FN_CODE_CTX = /^(FencedCode|CodeBlock|CodeText|InlineCode|HTMLBlock|Comment)$/;
+function inFnCodeContext(tree, pos) {
+  let n = tree.resolveInner(pos, 1);
+  for (let c = n; c; c = c.parent) if (FN_CODE_CTX.test(c.name)) return true;
   return false;
 }
 
@@ -275,9 +284,11 @@ function buildDeco(state) {
   for (const b of blocks) markBlocked(b.from, b.to);
 
   const isFence = (t) => /^\s{0,3}\$\$/.test(t);
+  let tocLine = null; // [toc] 目录块所在行
   for (let i = 1; i <= doc.lines; i++) {
     if (blockedLines.has(i)) continue;
     const line = doc.line(i);
+    if (tocLine === null && /^\s{0,3}\[toc\]\s*$/i.test(line.text) && !inFnCodeContext(tree, line.from)) tocLine = i;
     if (!isFence(line.text) || inCodeContext(tree, line.from)) continue;
     const single = /^\s{0,3}\$\$(.+)\$\$\s*$/.exec(line.text);
     let endLine = i;
@@ -313,6 +324,18 @@ function buildDeco(state) {
       if (close) customDecos.push(HIDE.range(lastLine.to - close[0].length, lastLine.to));
     }
     i = endLine;
+  }
+
+  /* ---------- [toc] 目录块 ---------- */
+  if (tocLine != null && !touched(doc.line(tocLine).from, doc.line(tocLine).to)) {
+    const tocLineObj = doc.line(tocLine);
+    const lineTexts = [];
+    for (let k = 1; k <= doc.lines; k++) lineTexts.push(doc.line(k).text);
+    const headings = collectHeadings(lineTexts).map((h) => ({ level: h.level, title: h.title, pos: doc.line(h.line + 1).from }));
+    const sig = headings.map((h) => h.level + ':' + h.title).join('|');
+    blocks.push(Decoration.replace({
+      widget: new TocWidget(sig, headings, tocLineObj.from), block: true, inclusiveEnd: false
+    }).range(tocLineObj.from, Math.min(tocLineObj.to + 1, doc.length)));
   }
 
   /* ---------- 行内数学公式 / ==高亮== ---------- */
@@ -354,6 +377,28 @@ function buildDeco(state) {
           customDecos.push(HIDE.range(to - 2, to));
         }
         customRanges.push([from, to]);
+      }
+    }
+    /* 脚注：定义行 [^x]: 隐藏标记并弱化整行；正文引用 [^x] 显示为上标样式（文本保留，便于点击编辑） */
+    if (line.text.indexOf('[^') > -1) {
+      const def = /^(\s*)\[\^([^\]\s]+)\]:\s*/.exec(line.text);
+      if (def) {
+        lines.push(Decoration.line({ class: 'ink-footnote-def' }).range(line.from));
+        if (!touched(line.from, line.to)) {
+          customDecos.push(hideRun(line.from + def[1].length, line.from + def[0].length, line.to));
+          customRanges.push([line.from + def[1].length, line.from + def[0].length]);
+        }
+      } else {
+        const FN_REF = /\[\^([^\]\s]+)\]/g;
+        FN_REF.lastIndex = 0;
+        let fn;
+        while ((fn = FN_REF.exec(line.text))) {
+          const from = line.from + fn.index;
+          const to = from + fn[0].length;
+          if (inFnCodeContext(tree, from + 1)) continue;
+          customDecos.push(Decoration.mark({ class: 'ink-footnote' }).range(from, to));
+          customRanges.push([from, to]);
+        }
       }
     }
   }

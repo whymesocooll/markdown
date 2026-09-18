@@ -93,6 +93,35 @@ export function slugify(s) {
     .replace(/-+/g, '-') || 'section';
 }
 
+/** 提取 ATX/Setext 标题（[toc] widget 与导出共用），行号为 0-based */
+export function collectHeadings(lines) {
+  const out = [];
+  let fence = null;
+  let prevText = '';
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i];
+    const fm = /^\s{0,3}(```+|~~~+)/.exec(t);
+    if (fence) { if (fm && t.trim().startsWith(fence)) { fence = null; prevText = ''; } continue; }
+    if (fm) { fence = fm[1]; prevText = ''; continue; }
+    const setext = /^\s{0,3}(=+|-+)\s*$/.exec(t);
+    const isAtx = /^#{1,6}\s+/.test(prevText);
+    const isList = /^\s*([-*+]|\d+[.)])\s/.test(prevText);
+    if (setext && prevText && !isAtx && !isList) {
+      out.push({ level: setext[1][0] === '=' ? 1 : 2, title: prevText.replace(/[*_`~]/g, '').trim() || '(空标题)', line: i - 1 });
+      prevText = '';
+      continue;
+    }
+    const m = /^(#{1,6})\s+(.*)$/.exec(t);
+    if (m) {
+      out.push({ level: m[1].length, title: m[2].replace(/[*_`~]/g, '').trim() || '(空标题)', line: i });
+      prevText = '';
+      continue;
+    }
+    prevText = t.trim() ? t : '';
+  }
+  return out;
+}
+
 export function fmtTime(ts) {
   const d = new Date(ts);
   const p = (n) => String(n).padStart(2, '0');

@@ -86,3 +86,11 @@ kbd {
   font-family: var(--d-mono); font-size: .85em; border: 1px solid var(--d-border);
   border-bottom-width: 2px; border-radius: 4px; padding: .1em .4em; background: var(--d-code-bg);
 }
+
+/* 脚注 */
+.ink-fn-ref { font-size: .75em; }
+.ink-fn-ref a { text-decoration: none; }
+.ink-fn-rule { border: 0; border-top: 1px solid #ccc; margin: 2em 0 1em; }
+.ink-footnotes { font-size: .9em; opacity: .85; }
+.ink-fn-note { margin: .3em 0; }
+.ink-fn-label { margin-right: .35em; }

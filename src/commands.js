@@ -198,6 +198,7 @@ export const formatKeymap = [
   { key: 'Mod-Shift-o', run: (v) => toggleLinePrefix(v, 'ol') },
   { key: 'Mod-Shift-t', run: (v) => toggleLinePrefix(v, 'task') },
   { key: 'Mod-Shift-m', run: (v) => insertInlineMath(v) },
+  { key: 'Mod-Alt-f', run: (v) => insertFootnote(v) },
   { key: 'Mod-Alt-t', run: (v) => insertTable(v) },
   { key: 'Mod-Alt-m', run: (v) => insertMathBlock(v) },
   { key: 'Mod-Shift-Minus', run: (v) => insertHr(v) },

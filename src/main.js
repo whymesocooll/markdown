@@ -5,7 +5,7 @@ import { EditorView } from '@codemirror/view';
 import { EditorState, EditorSelection } from '@codemirror/state';
 import { undo, redo } from '@codemirror/commands';
 import { openSearchPanel } from '@codemirror/search';
-import { createEditor, setDoc, readOnlyComp } from './editor.js';
+import { createEditor, setDoc, readOnlyComp, spellcheckComp } from './editor.js';
 import { sourceModeEffect, sourceModeField, readModeEffect, readModeField, refreshEffect } from './livepreview.js';
 import { loadMermaid, renderMermaid } from './mermaid.js';
 import * as C from './commands.js';
@@ -60,7 +60,7 @@ const SETTINGS_KEY = 'inkflow:settings';
 const defaults = {
   theme: 'dark', fontKind: 'sans', fontSize: 16, lineHeight: 1.8,
   pageWidth: 800, justify: false, focusMode: false, typewriter: false,
-  sidebar: true, customCss: '', autosaveMs: 700
+  sidebar: true, customCss: '', autosaveMs: 700, spellcheck: false
 };
 let settings = Object.assign({}, defaults, readJSON(SETTINGS_KEY));
 
@@ -199,6 +199,7 @@ async function importObsidianTheme(file) {
   applyAppearance();
   return base;
 }
+let lastSpellcheck = null;
 function applyAppearance() {
   const prevTheme = document.documentElement.dataset.theme;
   const th = effectiveTheme();
@@ -223,6 +224,14 @@ function applyAppearance() {
   // 仅主题真正变化时刷新装饰（mermaid 等 widget 需要重建换肤）；
   // 字号/行高/页宽走 CSS 变量即可，CM 会自动重测，不必每次滑块拖动都全量重建装饰
   if (app.view && prevTheme !== th) app.view.dispatch({ effects: refreshEffect.of(null) });
+  // 拼写检查：仅在开关变化时重配 compartment（editor 初始为关）
+  const sp = !!settings.spellcheck;
+  if (app.view && sp !== lastSpellcheck) {
+    lastSpellcheck = sp;
+    app.view.dispatch({ effects: spellcheckComp.reconfigure(
+      EditorView.contentAttributes.of({ spellcheck: sp ? 'true' : 'false', autocapitalize: 'off' })
+    ) });
+  }
 }
 mq.addEventListener('change', () => { if (settings.theme === 'auto') applyAppearance(); });
 
@@ -980,6 +989,7 @@ function openSettings() {
   $('#setWidth').value = settings.pageWidth;
   $('#setWidthVal').textContent = settings.pageWidth + 'px';
   $('#setJustify').checked = !!settings.justify;
+  $('#setSpell').checked = !!settings.spellcheck;
   $('#setAutosave').value = settings.autosaveMs;
   $('#setAutosaveVal').textContent = settings.autosaveMs + 'ms';
   $('#setCss').value = settings.customCss || '';
@@ -1636,6 +1646,7 @@ function wireEvents() {
     saveSettings(); applyAppearance();
   });
   $('#setJustify').addEventListener('change', (e) => { settings.justify = e.target.checked; saveSettings(); applyAppearance(); });
+  $('#setSpell').addEventListener('change', (e) => { settings.spellcheck = e.target.checked; saveSettings(); applyAppearance(); });
   $('#setAutosave').addEventListener('input', (e) => {
     settings.autosaveMs = Number(e.target.value);
     $('#setAutosaveVal').textContent = settings.autosaveMs + 'ms';

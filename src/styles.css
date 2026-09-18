@@ -751,6 +751,21 @@ table.ink-table td.editing { position: relative; }
 .qo-item .qo-type { color: var(--text-faint); font-size: 11px; flex: none; }
 .qo-item .qo-path { color: var(--text-faint); font-size: 11px; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* ---------- 脚注 / [toc] 目录块 ---------- */
+.ink-footnote { font-size: .78em; vertical-align: super; color: var(--accent); }
+.ink-footnote-def { color: var(--text-dim); font-size: .95em; }
+.ink-toc {
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+  display: flex; flex-direction: column; align-items: stretch; gap: 2px;
+  background: var(--bg-soft);
+}
+.ink-toc-item {
+  background: none; border: 0; color: var(--text); cursor: pointer; font-family: inherit;
+  font-size: 13px; text-align: left; padding: 3px 6px; border-radius: 5px;
+}
+.ink-toc-item:hover { background: var(--sel, var(--panel-2)); }
+.ink-toc-lv { color: var(--text-faint); font-size: 10.5px; margin-right: 6px; }
+
 .toast {
   position: fixed; left: 50%; bottom: 44px; transform: translateX(-50%);
   background: var(--panel); border: 1px solid var(--border); color: var(--text);
