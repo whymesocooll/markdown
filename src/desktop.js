@@ -26,6 +26,10 @@ export async function desktopStatPath(p) {
 export async function desktopCreateFile(handle, name) {
   return D().createFile({ path: handle.path }, name);
 }
+/** 图片落盘到 <dir>/assets/，返回相对 dir 的 POSIX 路径（桌面版专用） */
+export function desktopWriteAsset(dir, name, dataUrl) {
+  return D().writeAsset(dir, name, dataUrl);
+}
 export function desktopOpenFile() {
   return D().openFile();
 }

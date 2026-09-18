@@ -213,6 +213,27 @@ ipcMain.handle('fs:create', async (_e, dirHandle_, name) => {
   return fileHandle(p);
 });
 
+// 粘贴/拖入的图片落盘：写入 <dir>/assets/（文件名去重），返回相对 dirPath 的 POSIX 路径；失败返回 null（渲染层回退 base64）
+ipcMain.handle('fs:write-asset', async (_e, dirPath, fileName, dataUrl) => {
+  try {
+    const m = /^data:[^;]+;base64,(.*)$/s.exec(String(dataUrl || ''));
+    if (!m || !dirPath) return null;
+    const buf = Buffer.from(m[1], 'base64');
+    const dir = path.join(dirPath, 'assets');
+    await fs.mkdir(dir, { recursive: true });
+    const ext = (path.extname(fileName) || '.png').toLowerCase();
+    const base = path.basename(fileName, path.extname(fileName)) || 'image';
+    let name = base + ext;
+    let n = 1;
+    while (fsSync.existsSync(path.join(dir, name))) name = `${base}-${n++}${ext}`;
+    const target = path.join(dir, name);
+    await fs.writeFile(target, buf);
+    return path.relative(dirPath, target).replace(/\\/g, '/');
+  } catch (e) {
+    return null;
+  }
+});
+
 ipcMain.handle('file:open', async () => {
   const r = await dialog.showOpenDialog(mainWindow, {
     properties: ['openFile'],

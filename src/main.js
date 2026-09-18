@@ -12,7 +12,8 @@ import * as C from './commands.js';
 import * as F from './files.js';
 import * as FT from './filetree.js';
 import { desktopOnBeforeClose, desktopCloseReady, desktopRendererReady, desktopOnOpenFile } from './desktop.js';
-import { buildStandaloneHtml, buildStandaloneHtmlAsync, downloadFile, printToPdf, renderMarkdown } from './exporter.js';
+import { buildStandaloneHtml, buildStandaloneHtmlAsync, downloadFile, printToPdf, renderMarkdown, renderMarkdownAsync } from './exporter.js';
+import { loadTurndown } from './turndown-loader.js';
 import { debounce, countWords, panguSpacing, fmtTime, uid } from './utils.js';
 import { themeCssToBlocks, blockToCss } from './obsidian.js';
 
@@ -1043,28 +1044,86 @@ function setupOnboarding() {
 }
 
 /* ---------------- 启动 ---------------- */
+const readAsDataURL = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(reader.result);
+  reader.onerror = () => reject(reader.error || new Error('图片读取失败'));
+  reader.readAsDataURL(file);
+});
+
+/** 粘贴/拖入的图片：优先落盘（桌面版文档旁或文件夹树根的 assets/，文件名去重），失败回退 base64 内联 */
+async function insertImageFile(view, file) {
+  const fileName = file.name || 'image.png';
+  let src = null;
+  try {
+    const treeRoot = FT.rootDir();
+    if (F.isDesktop) {
+      const docDir = app.handle && app.handle.path
+        ? app.handle.path.slice(0, Math.max(app.handle.path.lastIndexOf('\\'), app.handle.path.lastIndexOf('/')))
+        : '';
+      const dir = docDir || (treeRoot && treeRoot.path) || '';
+      if (dir) src = await F.writeAssetDesktop(dir, fileName, await readAsDataURL(file));
+    } else if (FT.hasRoot() && treeRoot) {
+      // 文档在树中的相对深度决定 ../ 前缀（app.path 是以 / 分隔的树内合成路径）
+      const depth = app.path ? app.path.split('/').length - 1 : 0;
+      const name = await F.writeAssetBrowser(treeRoot, fileName, file);
+      if (name) src = '../'.repeat(depth) + 'assets/' + name;
+    }
+  } catch (e) { /* 落盘失败回退 base64 */ }
+  if (!src) {
+    try { src = await readAsDataURL(file); } catch (e) { src = ''; }
+    if (!src) { toast('图片读取失败', { type: 'error', duration: 7000 }); return; }
+  }
+  const r = view.state.selection.main;
+  const md = `![${fileName.replace(/\.[a-z0-9]+$/i, '') || '图片'}](${src})`;
+  view.dispatch({ changes: { from: r.from, to: r.to, insert: md }, selection: { anchor: r.from + md.length }, scrollIntoView: true });
+  if (!src.startsWith('data:')) toast(`图片已保存到 ${src}`);
+}
+
+/** 富文本 HTML → Markdown 后插入（Turndown 懒加载；转换失败退回纯文本） */
+async function insertHtmlAsMarkdown(view, html, plain) {
+  let md;
+  try {
+    const svc = await loadTurndown();
+    md = svc.turndown(html).trim();
+  } catch (e) {
+    md = plain || html;
+  }
+  if (!md) return;
+  const r = view.state.selection.main;
+  view.dispatch({
+    changes: { from: r.from, to: r.to, insert: md },
+    selection: { anchor: r.from + md.length },
+    scrollIntoView: true,
+    userEvent: 'input.paste'
+  });
+}
+
 async function boot() {
   buildToolbar();
 
   const pasteHandler = EditorView.domEventHandlers({
     paste(event, view) {
       if (view.state.readOnly) return true; // 阅读模式：忽略粘贴
-      const items = event.clipboardData && event.clipboardData.items;
+      const cd = event.clipboardData;
+      const items = cd && cd.items;
       if (!items) return false;
+      // 1) 图片：优先落盘为文件（assets/），失败回退 base64
       for (const it of items) {
         if (it.type && it.type.startsWith('image/')) {
           const file = it.getAsFile();
           if (!file) continue;
           event.preventDefault();
-          const reader = new FileReader();
-          reader.onload = () => {
-            const r = view.state.selection.main;
-            const md = `![粘贴的图片](${reader.result})`;
-            view.dispatch({ changes: { from: r.from, to: r.to, insert: md }, selection: { anchor: r.from + md.length } });
-          };
-          reader.readAsDataURL(file);
+          insertImageFile(view, file);
           return true;
         }
+      }
+      // 2) 富文本 HTML → Markdown（从网页/Word/Excel 复制的内容）
+      const html = cd.getData('text/html');
+      if (html) {
+        event.preventDefault();
+        insertHtmlAsMarkdown(view, html, cd.getData('text/plain'));
+        return true;
       }
       return false;
     }
@@ -1543,9 +1602,7 @@ function wireEvents() {
     }
     if (images.length) {
       const file = images[0];
-      const reader = new FileReader();
-      reader.onload = () => C.insertImage(app.view, String(reader.result), file.name);
-      reader.readAsDataURL(file);
+      insertImageFile(app.view, file);
       if (images.length > 1) toast(`已插入第 1 张图片，其余 ${images.length - 1} 张请逐张拖入`);
       return;
     }

@@ -1,7 +1,7 @@
 // 文件读写：Electron 桌面模式走 Node fs IPC；浏览器优先 File System Access API（可原地保存），否则回退到上传/下载
 import { downloadFile } from './exporter.js';
 import { uid } from './utils.js';
-import { isDesktop, desktopOpenFile, desktopReadFile, desktopStatPath, desktopSaveFile, desktopSaveFileAs } from './desktop.js';
+import { isDesktop, desktopOpenFile, desktopReadFile, desktopStatPath, desktopSaveFile, desktopSaveFileAs, desktopWriteAsset } from './desktop.js';
 
 export const hasFS = typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function';
 export { isDesktop } from './desktop.js';
@@ -39,6 +39,36 @@ export async function openFile() {
 
 export async function readDroppedFile(file) {
   return { name: file.name, text: await file.text(), handle: null };
+}
+
+/** 桌面版图片落盘：写入 dir/assets/（文件名去重），返回相对 dir 的 POSIX 路径；失败/非桌面返回 null */
+export async function writeAssetDesktop(dir, fileName, dataUrl) {
+  if (!isDesktop || !dir) return null;
+  return desktopWriteAsset(dir, fileName, dataUrl);
+}
+
+/** 浏览器图片落盘：写入目录句柄下 assets/ 子目录（文件名去重），返回文件名；失败返回 null */
+export async function writeAssetBrowser(dirHandle, fileName, blob) {
+  if (!dirHandle) return null;
+  try {
+    const assets = await dirHandle.getDirectoryHandle('assets', { create: true });
+    const ext = (fileName.match(/(\.[a-z0-9]+)$/i) || ['', '.png'])[1];
+    const base = fileName.slice(0, fileName.length - ext.length) || 'image';
+    let name = base + ext;
+    for (let n = 1; n < 1000; n++) {
+      try {
+        await assets.getFileHandle(name, { create: false }); // 已存在 → 换名重试
+        name = `${base}-${n}${ext}`;
+      } catch (e) { break; }
+    }
+    const fh = await assets.getFileHandle(name, { create: true });
+    const w = await fh.createWritable();
+    await w.write(blob);
+    await w.close();
+    return name;
+  } catch (e) {
+    return null;
+  }
 }
 
 /** 桌面版按绝对路径打开文件（启动参数/外部打开请求），返回结构与 openFile 一致 */

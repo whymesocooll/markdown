@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('inkflowDesktop', {
   readFile: (handle) => ipcRenderer.invoke('fs:read', handle),
   statFile: (p) => ipcRenderer.invoke('fs:stat', p),
   createFile: (handle, name) => ipcRenderer.invoke('fs:create', handle, name),
+  writeAsset: (dir, name, dataUrl) => ipcRenderer.invoke('fs:write-asset', dir, name, dataUrl),
   openFile: () => ipcRenderer.invoke('file:open'),
   saveFile: (handle, text, mtime) => ipcRenderer.invoke('file:save', handle, text, mtime),
   saveFileAs: (name, text) => ipcRenderer.invoke('file:saveAs', name, text),
