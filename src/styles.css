@@ -733,6 +733,24 @@ table.ink-table td.editing { position: relative; }
 .hint { font-size: 11.5px; color: var(--text-faint); line-height: 1.7; margin: -4px 0 12px; }
 .confirm-message { font-size: 13px; color: var(--text-dim); line-height: 1.7; margin: 0; }
 
+/* ---------- 快速打开（Ctrl+P） ---------- */
+.quick-open { top: 12%; transform: translateX(-50%); width: 560px; max-width: 92vw; padding: 10px 10px 6px; }
+.quick-open input {
+  width: 100%; box-sizing: border-box; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px;
+  font-size: 13.5px; font-family: inherit; outline: none;
+}
+.quick-open input:focus { border-color: var(--accent); }
+.qo-list { margin-top: 8px; max-height: 46vh; overflow: auto; }
+.qo-item {
+  display: flex; width: 100%; text-align: left; gap: 8px; align-items: baseline;
+  background: none; border: 0; color: var(--text); padding: 7px 10px;
+  border-radius: 7px; cursor: pointer; font-size: 13px; font-family: inherit;
+}
+.qo-item.active, .qo-item:hover { background: var(--sel, var(--bg-soft)); }
+.qo-item .qo-type { color: var(--text-faint); font-size: 11px; flex: none; }
+.qo-item .qo-path { color: var(--text-faint); font-size: 11px; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .toast {
   position: fixed; left: 50%; bottom: 44px; transform: translateX(-50%);
   background: var(--panel); border: 1px solid var(--border); color: var(--text);

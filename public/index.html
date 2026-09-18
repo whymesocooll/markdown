@@ -82,6 +82,7 @@
   <div class="sep"></div>
   <button data-exp="md">下载 .md</button>
   <button data-exp="html">导出网页 .html</button>
+  <button data-exp="copyhtml">复制为富文本 HTML</button>
   <button data-exp="pdf">导出 PDF / 打印<kbd>Ctrl+Shift+P</kbd></button>
 </div>
 
@@ -194,6 +195,12 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<div class="overlay hidden" id="qoOverlay"></div>
+<div class="dialog hidden quick-open" id="quickOpen">
+  <input type="text" id="qoInput" placeholder="输入文件名模糊匹配，↑↓ 选择，Enter 打开，Esc 关闭" autocomplete="off" spellcheck="false">
+  <div id="qoList" class="qo-list"></div>
+</div>
 
 <script type="module" src="app.js"></script>
 </body>

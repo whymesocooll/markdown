@@ -186,6 +186,12 @@ export async function buildStandaloneHtmlAsync(md, { title = 'Document', theme =
   return wrapHtml(body, { title, theme });
 }
 
+/** 剪贴板富文本片段：正文 + KaTeX 样式内联（不含文档外壳），粘进邮件/Word 等保留排版 */
+export async function buildRichFragment(md, { theme = 'light' } = {}) {
+  const body = await renderMarkdownAsync(md, { theme });
+  return `<style>${KATEX_CSS}</style><div class="ink-article">${body}</div>`;
+}
+
 function wrapHtml(body, { title, theme }) {
   const hl = theme === 'dark' ? HLJS_DARK_CSS : HLJS_LIGHT_CSS;
   return `<!DOCTYPE html>

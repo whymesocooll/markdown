@@ -12,7 +12,7 @@ import * as C from './commands.js';
 import * as F from './files.js';
 import * as FT from './filetree.js';
 import { desktopOnBeforeClose, desktopCloseReady, desktopRendererReady, desktopOnOpenFile } from './desktop.js';
-import { buildStandaloneHtml, buildStandaloneHtmlAsync, downloadFile, printToPdf, renderMarkdown, renderMarkdownAsync } from './exporter.js';
+import { buildStandaloneHtml, buildStandaloneHtmlAsync, downloadFile, printToPdf, renderMarkdown, renderMarkdownAsync, buildRichFragment } from './exporter.js';
 import { loadTurndown } from './turndown-loader.js';
 import { debounce, countWords, panguSpacing, fmtTime, uid } from './utils.js';
 import { themeCssToBlocks, blockToCss } from './obsidian.js';
@@ -803,6 +803,24 @@ async function loadContent(name, content, handle, mtime = null) {
   return r;
 }
 
+/** 打开本地暂存文档（文件面板点击 / 快速打开共用） */
+async function openVaultDoc(d) {
+  if (!(await confirmDiscard())) return;
+  app.docId = d.id;
+  app.handle = null;
+  app.saveState = 'idle';
+  setTitle(d.name);
+  setDoc(app.view, d.text);
+  app.savedText = d.text;
+  app.checkpointText = d.text;
+  app.checkpointState = 'saved';
+  markDirty(false);
+  F.setLastDocId(d.id);
+  buildOutline();
+  renderFiles();
+  app.view.focus();
+}
+
 async function saveDoc(forceAs) {
   const content = text();
   try {
@@ -854,6 +872,20 @@ async function exportPdf() {
 function exportMd() {
   downloadFile(baseName() + '.md', text(), 'text/markdown;charset=utf-8');
   toast('已导出 Markdown');
+}
+/** 复制为富文本 HTML（含 KaTeX 样式与内联 mermaid SVG），粘进邮件/Word/公众号保留排版 */
+async function copyAsHtml() {
+  const html = await buildRichFragment(text(), { theme: themeFamily(effectiveTheme()) });
+  try {
+    if (!navigator.clipboard || !window.ClipboardItem) throw new Error('当前环境剪贴板不支持');
+    await navigator.clipboard.write([new ClipboardItem({
+      'text/html': new Blob([html], { type: 'text/html' }),
+      'text/plain': new Blob([text()], { type: 'text/plain' })
+    })]);
+    toast('已复制为富文本 HTML');
+  } catch (e) {
+    toast('复制失败：' + (e.message || e), { type: 'error', duration: 7000 });
+  }
 }
 
 /* ---------------- 工具栏 ---------------- */
@@ -1282,6 +1314,94 @@ function setReadMode(on) {
 }
 function toggleReadMode() { setReadMode(!readMode); }
 
+/* ---------------- 快速打开（Ctrl+P） ---------------- */
+// 模糊匹配：子串命中优先（越靠前越好），否则按子序列连续度打分
+function fuzzyScore(text, q) {
+  if (!q) return 1;
+  const t = String(text).toLowerCase();
+  const idx = t.indexOf(q);
+  if (idx >= 0) return 2000 - idx - t.length * 0.05;
+  let score = 100, last = -2;
+  for (const ch of q) {
+    const j = t.indexOf(ch, last + 1);
+    if (j < 0) return -1;
+    if (j === last + 1) score += 3; // 连续命中加分
+    last = j;
+  }
+  return score - t.length * 0.05;
+}
+
+// 候选来源：文件树（含已加载子目录）+ 最近文件（桌面版）+ 本次会话暂存
+function quickOpenSources() {
+  const out = [];
+  const walk = (nodes, prefix) => {
+    for (const n of nodes) {
+      if (n.kind === 'dir') walk(n.children || [], prefix ? `${prefix}/${n.name}` : n.name);
+      else out.push({ type: 'tree', name: n.name, sub: prefix || '', node: n });
+    }
+  };
+  walk(treeState.nodes, '');
+  if (F.isDesktop) {
+    for (const r of readRecents()) out.push({ type: 'recent', name: r.name, sub: pathBase(r.path), recent: r });
+  }
+  for (const d of F.listDocs()) out.push({ type: 'vault', name: d.name, sub: '本次会话', doc: d });
+  return out;
+}
+
+let qoList = [];
+let qoSel = 0;
+function renderQuickOpen() {
+  const q = $('#qoInput').value.trim().toLowerCase();
+  qoList = quickOpenSources().map((it) => ({
+    ...it,
+    score: Math.max(fuzzyScore(it.name, q), (it.sub ? fuzzyScore(it.sub, q) : -1) * 0.9)
+  })).filter((it) => it.score > 0).sort((a, b) => b.score - a.score).slice(0, 20);
+  qoSel = 0;
+  const typeLabel = { tree: '文件夹', recent: '最近', vault: '暂存' };
+  $('#qoList').innerHTML = qoList.length
+    ? qoList.map((it, i) =>
+        `<button class="qo-item${i === 0 ? ' active' : ''}" data-i="${i}"><span class="qo-type">${typeLabel[it.type]}</span>${escapeAttr(it.name)}<span class="qo-path">${escapeAttr(it.sub)}</span></button>`
+      ).join('')
+    : '<div class="empty-tip">没有匹配的文件</div>';
+}
+function setQoSel(i) {
+  qoSel = i;
+  $$('#qoList .qo-item').forEach((el, j) => el.classList.toggle('active', j === i));
+  const el = $('#qoList .qo-item.active');
+  if (el) el.scrollIntoView({ block: 'nearest' });
+}
+function openQuickOpen() {
+  $('#qoOverlay').classList.remove('hidden');
+  $('#quickOpen').classList.remove('hidden');
+  $('#qoInput').value = '';
+  renderQuickOpen();
+  $('#qoInput').focus();
+}
+function closeQuickOpen() {
+  $('#qoOverlay').classList.add('hidden');
+  $('#quickOpen').classList.add('hidden');
+}
+async function openQuickOpenItem(i) {
+  const it = qoList[i];
+  closeQuickOpen();
+  if (!it) return;
+  try {
+    if (it.type === 'tree') {
+      if (!(await confirmDiscard())) return;
+      const r = await FT.readFile(it.node.handle);
+      await loadContent(r.name, r.text, it.node.handle, r.mtime || null);
+      toast(`已打开 ${r.name}`);
+    } else if (it.type === 'recent') {
+      const idx = readRecents().findIndex((r) => r.path === it.recent.path);
+      if (idx >= 0) await reopenRecent(idx);
+    } else if (it.type === 'vault') {
+      await openVaultDoc(it.doc);
+    }
+  } catch (e) {
+    toast('打开失败：' + (e.message || e), { type: 'error', duration: 7000 });
+  }
+}
+
 function wireEvents() {
   // 工具栏
   $('#toolbar').addEventListener('mousedown', (e) => {
@@ -1316,6 +1436,7 @@ function wireEvents() {
     closeMenus();
     if (b.dataset.exp === 'md') exportMd();
     if (b.dataset.exp === 'html') exportHtml();
+    if (b.dataset.exp === 'copyhtml') copyAsHtml();
     if (b.dataset.exp === 'pdf') exportPdf();
     if (b.dataset.exp === 'saveas') saveDoc(true);
   });
@@ -1435,21 +1556,9 @@ function wireEvents() {
     if (tact) { handleTreeAction(tact.dataset.tree); return; }
     const item = e.target.closest('.file-item');
     if (!item) return;
-    if (!(await confirmDiscard())) return;
     const d = F.getDoc(item.dataset.id);
     if (!d) return;
-    app.docId = d.id;
-    app.handle = null;
-    setTitle(d.name);
-    setDoc(app.view, d.text);
-    app.savedText = d.text;
-    app.checkpointText = d.text;
-    app.checkpointState = 'saved';
-    markDirty(false);
-    F.setLastDocId(d.id);
-    buildOutline();
-    renderFiles();
-    app.view.focus();
+    await openVaultDoc(d);
   });
   $('#btnNewLocal').addEventListener('click', newDoc);
 
@@ -1551,6 +1660,20 @@ function wireEvents() {
     if (!e.target.closest('.menu') && !e.target.closest('[data-menu-btn]')) closeMenus();
   });
 
+  // 快速打开（Ctrl+P）
+  $('#qoInput').addEventListener('input', renderQuickOpen);
+  $('#qoInput').addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setQoSel(Math.min(qoSel + 1, qoList.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setQoSel(Math.max(qoSel - 1, 0)); }
+    else if (e.key === 'Enter') { e.preventDefault(); openQuickOpenItem(qoSel); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeQuickOpen(); }
+  });
+  $('#qoList').addEventListener('click', (e) => {
+    const b = e.target.closest('.qo-item');
+    if (b) openQuickOpenItem(Number(b.dataset.i));
+  });
+  $('#qoOverlay').addEventListener('click', closeQuickOpen);
+
   // 全局快捷键
   window.addEventListener('keydown', (e) => {
     const mod = e.ctrlKey || e.metaKey;
@@ -1559,6 +1682,7 @@ function wireEvents() {
     if (k === 's') { e.preventDefault(); saveDoc(e.shiftKey); }
     else if (k === 'o') { e.preventDefault(); openDoc(); }
     else if (k === 'n' && e.altKey) { e.preventDefault(); newDoc(); }
+    else if (k === 'p' && !e.shiftKey) { e.preventDefault(); openQuickOpen(); } // Ctrl+Shift+P 仍是导出 PDF
     else if (k === '\\') { e.preventDefault(); settings.sidebar = !settings.sidebar; saveSettings(); applyAppearance(); }
     else if (k === 'p' && e.shiftKey) { e.preventDefault(); exportPdf(); }
     else if (k === '/' && !readMode) { e.preventDefault(); $('#btnSource').click(); }
