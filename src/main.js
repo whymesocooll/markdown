@@ -372,6 +372,7 @@ async function checkpoint({ notifyFailure = true, snapshotText } = {}) {
   F.setLastDocId(app.docId);
   refreshVaultSection();
   renderSaveState();
+  F.putHistorySnapshot({ name: snapshot.name, text: snapshot.text }); // 每日历史快照（内部自限频）
   return r;
 }
 
@@ -519,7 +520,7 @@ function highlightOutline() {
 /* ---------------- 文档库 ---------------- */
 function renderFiles() {
   const panel = $('#panelFiles');
-  panel.innerHTML = recentSectionHtml() + treeSectionHtml() + `<div id="vaultSection">${vaultSectionHtml()}</div>`;
+  panel.innerHTML = recentSectionHtml() + treeSectionHtml() + `<div id="vaultSection">${vaultSectionHtml()}</div>` + `<div id="historySection">${historySectionHtml()}</div>`;
 }
 
 // checkpoint 后只需更新「本次会话」暂存列表——全量 renderFiles 会连带重建文件树，
@@ -529,6 +530,54 @@ function refreshVaultSection() {
   // 面板不可见（侧栏收起 / 停在大纲页）时跳过 DOM 更新，切回文档页时补一次
   if (!el || !el.offsetParent) return;
   el.innerHTML = vaultSectionHtml();
+}
+
+function historySectionHtml() {
+  const list = F.listHistory();
+  if (!list.length) return '';
+  return '<div class="vault-head">历史版本（近 7 天）</div>' + list.map((d) => `
+    <div class="file-item" data-history="${escapeAttr(d.id)}" title="点击恢复此快照">
+      <div class="fi-main">
+        <div class="fi-name">${escapeAttr(d.name)}</div>
+        <div class="fi-meta">${fmtTime(d.updated)} · ${d.text.length} 字符</div>
+      </div>
+      <button class="fi-del" data-hdel="${escapeAttr(d.id)}" title="删除此快照">${ICON.trash}</button>
+    </div>`).join('');
+}
+
+function refreshHistorySection() {
+  const el = $('#historySection');
+  if (!el || !el.offsetParent) return;
+  el.innerHTML = historySectionHtml();
+}
+
+/** 恢复历史快照：以快照内容新建会话文档（不恢复文件句柄） */
+async function restoreHistory(id) {
+  const snap = F.getHistory(id);
+  if (!snap) return;
+  const choice = await showConfirm({
+    title: '恢复历史版本',
+    message: `把编辑器内容替换为 ${fmtTime(snap.updated)} 的「${snap.name}」快照（约 ${snap.text.length} 字符）？当前文档未保存的修改将丢失。`,
+    actions: [
+      { label: '恢复', value: 'restore', kind: 'primary' },
+      { label: '取消', value: 'cancel', kind: 'ghost' }
+    ]
+  });
+  if (choice !== 'restore') return;
+  app.docId = uid();
+  app.handle = null;
+  app.path = '';
+  app.mtime = null;
+  app.saveState = 'idle';
+  setTitle(snap.name, '');
+  setDoc(app.view, snap.text);
+  app.savedText = snap.text;
+  app.checkpointText = '';
+  markDirty(false);
+  await checkpoint();
+  renderFiles();
+  app.view.focus();
+  toast('已恢复历史版本');
 }
 
 function treeSectionHtml() {
@@ -1534,7 +1583,7 @@ function wireEvents() {
     $('#panelOutline').classList.toggle('hidden', app.sideTab !== 'outline');
     $('#panelFiles').classList.toggle('hidden', app.sideTab !== 'files');
     $('#panelSearch').classList.toggle('hidden', app.sideTab !== 'search');
-    if (app.sideTab === 'files') refreshVaultSection(); // 隐藏期间被跳过的暂存列表更新在此补上
+    if (app.sideTab === 'files') { refreshVaultSection(); refreshHistorySection(); } // 隐藏期间被跳过的更新在此补上
     if (app.sideTab === 'search') renderSearchPanel(); // 首次切换时渲染搜索框
   });
   $('#panelOutline').addEventListener('click', (e) => {
@@ -1565,6 +1614,25 @@ function wireEvents() {
     scheduleTreeSearch();
   });
   $('#panelFiles').addEventListener('click', async (e) => {
+    const hdel = e.target.closest('[data-hdel]');
+    if (hdel) {
+      e.stopPropagation();
+      if (await showConfirm({
+        title: '删除历史快照',
+        message: '删除后将无法恢复这份快照。',
+        actions: [
+          { label: '删除', value: 'delete', kind: 'primary' },
+          { label: '取消', value: 'cancel', kind: 'ghost' }
+        ]
+      }) === 'delete') {
+        const r = await F.deleteHistory(hdel.dataset.hdel);
+        if (r.ok) refreshHistorySection();
+        else toast('删除失败：本地文档库不可用', { type: 'error', duration: 7000 });
+      }
+      return;
+    }
+    const hist = e.target.closest('[data-history]');
+    if (hist) { await restoreHistory(hist.dataset.history); return; }
     const recentDel = e.target.closest('[data-recent-del]');
     if (recentDel) {
       e.stopPropagation();

@@ -111,11 +111,13 @@ export async function saveFileAs({ name, text }) {
 const VAULT = 'inkflow:vault';
 const LAST = 'inkflow:last';
 const DB_NAME = 'inkflow-vault';
-const DB_VER = 1;
+const DB_VER = 2;
 const DOC_STORE = 'docs';
+const HIST_STORE = 'history';
 
 let vaultDb = null;
 let vaultCache = new Map();
+let historyCache = new Map();
 let vaultReady = false;
 let vaultInit = null;
 let vaultWriteFailureForTest = null;
@@ -132,6 +134,9 @@ function openVaultDb() {
       if (!db.objectStoreNames.contains(DOC_STORE)) {
         const store = db.createObjectStore(DOC_STORE, { keyPath: 'id' });
         store.createIndex('updated', 'updated');
+      }
+      if (!db.objectStoreNames.contains(HIST_STORE)) {
+        db.createObjectStore(HIST_STORE, { keyPath: 'id' }); // v2 新增：历史快照（跨会话保留）
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -168,6 +173,9 @@ async function loadCache() {
   const tx = vaultDb.transaction(DOC_STORE, 'readonly');
   const docs = await requestValue(tx.objectStore(DOC_STORE).getAll());
   vaultCache = new Map(docs.map((doc) => [doc.id, doc]));
+  const tx2 = vaultDb.transaction(HIST_STORE, 'readonly');
+  const snaps = await requestValue(tx2.objectStore(HIST_STORE).getAll());
+  historyCache = new Map(snaps.map((doc) => [doc.id, doc]));
 }
 
 async function migrateLegacy() {
@@ -277,4 +285,62 @@ export function setLastDocId(id) {
 }
 export function getLastDocId() {
   try { return localStorage.getItem(LAST) || ''; } catch (e) { return ''; }
+}
+
+/* ---------------- 历史快照（每日一份，保留 7 天，跨会话保留） ---------------- */
+let lastSnap = { day: '', text: null, at: 0 };
+
+function snapDayKey() {
+  const d = new Date();
+  return `snap-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** 每日快照：同一天内容未变跳过；变化则至少间隔 60 秒落一次，最多保留 7 份 */
+export async function putHistorySnapshot({ name, text }) {
+  if (!vaultReady) return;
+  const day = snapDayKey();
+  const now = Date.now();
+  if (day === lastSnap.day && (text === lastSnap.text || now - lastSnap.at < 60000)) return;
+  try {
+    const doc = { id: day, name: name || '未命名.md', text: String(text || ''), updated: now };
+    const tx = vaultDb.transaction(HIST_STORE, 'readwrite');
+    tx.objectStore(HIST_STORE).put(doc);
+    await transactionDone(tx);
+    historyCache.set(doc.id, doc);
+    lastSnap = { day, text: doc.text, at: now };
+    await pruneHistory();
+  } catch (error) { /* 快照失败不影响主流程 */ }
+}
+
+async function pruneHistory() {
+  const all = Array.from(historyCache.values()).sort((a, b) => b.updated - a.updated);
+  for (const old of all.slice(7)) {
+    try {
+      const tx = vaultDb.transaction(HIST_STORE, 'readwrite');
+      tx.objectStore(HIST_STORE).delete(old.id);
+      await transactionDone(tx);
+    } catch (error) { /* ignore */ }
+    historyCache.delete(old.id);
+  }
+}
+
+export function listHistory() {
+  return Array.from(historyCache.values()).sort((a, b) => b.updated - a.updated);
+}
+
+export function getHistory(id) {
+  return historyCache.get(id) || null;
+}
+
+export async function deleteHistory(id) {
+  if (!vaultReady) return result(false, null, new Error('本地文档库尚未准备完成'));
+  try {
+    const tx = vaultDb.transaction(HIST_STORE, 'readwrite');
+    tx.objectStore(HIST_STORE).delete(id);
+    await transactionDone(tx);
+    historyCache.delete(id);
+    return result(true);
+  } catch (error) {
+    return result(false, null, error);
+  }
 }
