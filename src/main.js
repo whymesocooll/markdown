@@ -921,7 +921,8 @@ async function exportHtml() {
   toast('已导出 HTML');
 }
 async function exportPdf() {
-  const r = await printToPdf(text(), { title: baseName(), theme: 'light' });
+  // PDF 配色跟随当前主题色系（亮色主题出白底，暗色出深底）
+  const r = await printToPdf(text(), { title: baseName(), theme: themeFamily(effectiveTheme()) });
   if (r === 'saved') toast('已导出 PDF');
   else if (r === 'cancelled') return; // 用户取消，不打扰
   else if (r && r.startsWith('failed:')) toast('导出 PDF 失败：' + r.slice(7));

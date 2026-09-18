@@ -86,14 +86,15 @@ export class MathWidget extends WidgetType {
 }
 
 export class ImageWidget extends WidgetType {
-  constructor(url, alt, title, pos) {
+  constructor(url, alt, title, pos, width = 0) {
     super();
     this.url = url;
     this.alt = alt || '';
     this.title = title || '';
     this.pos = pos;
+    this.width = width; // ![alt|400] 语法指定的显示宽度（px）
   }
-  eq(o) { return o.url === this.url && o.alt === this.alt && o.title === this.title && o.pos === this.pos; }
+  eq(o) { return o.url === this.url && o.alt === this.alt && o.title === this.title && o.pos === this.pos && o.width === this.width; }
   toDOM(view) {
     const wrap = document.createElement('span');
     wrap.className = 'ink-img';
@@ -101,6 +102,7 @@ export class ImageWidget extends WidgetType {
     img.src = this.url;
     img.alt = this.alt;
     if (this.title) img.title = this.title;
+    if (this.width) img.style.width = this.width + 'px';
     img.loading = 'lazy';
     img.onerror = () => {
       wrap.classList.add('ink-img-broken');

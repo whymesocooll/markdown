@@ -20,9 +20,14 @@ export function renderInline(src) {
       return hold(katex.renderToString(tex, { throwOnError: false, strict: 'ignore', output: 'html' }));
     } catch (e) { return hold(escapeHtml(m)); }
   });
-  // 图片
+  // 图片（alt 尾部 |400 语法指定显示宽度）
   s = s.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g,
-    (_, alt, url, title) => hold(`<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}"${title ? ` title="${escapeHtml(title)}"` : ''}>`));
+    (_, alt, url, title) => {
+      let w = '';
+      const wm = /\|(\d+(?:\.\d+)?)$/.exec(alt);
+      if (wm) { w = ` style="width:${wm[1]}px"`; alt = alt.slice(0, alt.length - wm[0].length); }
+      return hold(`<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}"${title ? ` title="${escapeHtml(title)}"` : ''}${w}>`);
+    });
   // 链接
   s = s.replace(/\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g,
     (_, text, url, title) => hold(`<a href="${escapeHtml(url)}"${title ? ` title="${escapeHtml(title)}"` : ''} target="_blank" rel="noopener">${escapeHtml(text)}</a>`));

@@ -178,6 +178,17 @@ function configureMarked(marked, hljs) {
         const text = isObj ? this.parser.parseInline(textOrToken.tokens) : textOrToken;
         const id = slugify(String(text).replace(/<[^>]+>/g, ''));
         return `<h${level} id="${id}">${text}</h${level}>\n`;
+      },
+      // 图片：alt 尾部 |400 语法转为显示宽度（与编辑器渲染一致）
+      image(hrefOrToken, titleArg, textArg) {
+        const isObj = hrefOrToken && typeof hrefOrToken === 'object';
+        const href = isObj ? hrefOrToken.href : hrefOrToken;
+        const title = isObj ? hrefOrToken.title : titleArg;
+        let text = isObj ? (hrefOrToken.text || '') : (textArg || '');
+        let width = '';
+        const wm = /\|(\d+(?:\.\d+)?)$/.exec(text);
+        if (wm) { width = ` style="width:${wm[1]}px"`; text = text.slice(0, text.length - wm[0].length); }
+        return `<img src="${escapeHtml(href || '')}" alt="${escapeHtml(text)}"${title ? ` title="${escapeHtml(title)}"` : ''}${width}>`;
       }
     }
   });
@@ -287,10 +298,11 @@ export function downloadFile(filename, content, mime = 'text/plain;charset=utf-8
 
 /** 桌面版：主进程 printToPDF 直出文件；浏览器版：隐藏 iframe 调打印（选「另存为 PDF」） */
 export async function printToPdf(md, { title = 'Document', theme = 'light' } = {}) {
+  const dark = theme === 'dark';
   const html = (await buildStandaloneHtmlAsync(md, { title, theme }))
     .replace('</head>', `<style>
 @page { margin: 18mm 16mm; }
-body { background: #fff !important; }
+body { background: ${dark ? '#17181d' : '#fff'} !important; }
 .ink-article { max-width: none; padding: 0; }
 @media print { a { color: inherit; text-decoration: underline; } pre, table, blockquote, .math-block { break-inside: avoid; } h1,h2,h3 { break-after: avoid; } }
 </style></head>`);

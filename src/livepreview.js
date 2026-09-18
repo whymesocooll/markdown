@@ -232,14 +232,19 @@ function buildDeco(state) {
             const raw = doc.sliceString(node.from, node.to);
             const m = /^!\[([^\]]*)\]\(\s*<?([^)\s>]*)>?(?:\s+["']([^"']*)["'])?\s*\)$/.exec(raw);
             if (m && m[2]) {
+              // ![alt|400] 语法：从 alt 尾部提取显示宽度
+              let alt = m[1];
+              let width = 0;
+              const wm = /\|(\d+(?:\.\d+)?)$/.exec(alt);
+              if (wm) { width = Number(wm[1]); alt = alt.slice(0, alt.length - wm[0].length); }
               const line = doc.lineAt(node.from);
               if (line.text.trim() === raw.trim()) {
                 blocks.push(Decoration.replace({
-                  widget: new ImageWidget(m[2], m[1], m[3], line.from), block: true, inclusiveEnd: false
+                  widget: new ImageWidget(m[2], alt, m[3], line.from, width), block: true, inclusiveEnd: false
                 }).range(line.from, Math.min(line.to + 1, doc.length)));
               } else {
                 inlines.push(Decoration.replace({
-                  widget: new ImageWidget(m[2], m[1], m[3], node.from)
+                  widget: new ImageWidget(m[2], alt, m[3], node.from, width)
                 }).range(node.from, node.to));
               }
               return false;
