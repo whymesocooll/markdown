@@ -19,7 +19,7 @@ npm run smoke:desktop    # Electron 冒烟：preload 桥 + 编辑器挂载 + 文
 
 ### Electron 桌面版
 
-- `main.cjs` 主进程：窗口加载 `dist/index.html`；菜单隐藏（快捷键全部由渲染进程处理）；Node fs + dialog 实现文件系统 IPC。
+- `main.cjs` 主进程：窗口加载 `dist/index.html`；菜单隐藏（快捷键全部由渲染进程处理）；Node fs + dialog 实现文件系统 IPC（含 `fs:write-asset` 图片落盘、`fs:grep` 全文搜索、mtime 冲突检测）。
 - `preload.cjs`：contextBridge 暴露 `window.inkflowDesktop`（folder:open/restore/close、fs:walk/read/create、file:open/save/saveAs）。
 - `src/desktop.js`：渲染进程适配层——`isDesktop` 检测（`window.inkflowDesktop` 存在时启用）。句柄统一为 `{ kind, path, name }` 结构，与浏览器 File System Access handle 同构。
 - `filetree.js` / `files.js` 双后端：Electron 走 IPC，浏览器走 File System Access API（行为不变，测试可继续用浏览器环境）。**Electron 模式比较文件用 `path`（`main.js` 里 `key(h)` 辅助函数），不要用对象引用比较。**
@@ -41,6 +41,7 @@ python -m http.server 8123 -d dist
 node test/run.mjs       # 一键串行跑全部回归（自带静态服务器，遇错即停）
 node test/smoke.mjs     # 主冒烟测试：渲染、命令、导出、主题（退出码 0/1 表示通过/失败）
 node test/tree.mjs      # 文件树：桩 showDirectoryPicker 验证树渲染/懒加载/打开文件
+node test/prompt.mjs    # 新建文件输入对话框：弹出/创建/重名拦截/取消（Electron 无 window.prompt）
 node test/table.mjs     # 表格编辑：单元格内联编辑、右键菜单增删行列/对齐
 node test/mermaid.mjs   # Mermaid：widget 渲染、光标回源码、导出内联 SVG
 node test/regression.mjs # 缺陷回归：标题菜单、块插入换行、widget 点击定位、监听器、saveState
@@ -56,7 +57,7 @@ Edge 路径硬编码在测试里：`C:/Program Files (x86)/Microsoft/Edge/Applic
 
 ### 所见即所得核心（本项目的关键机制）
 
-`src/livepreview.js` 是 WYSIWYG 的核心：基于 Lezer 语法树 + 光标位置构建 CodeMirror 6 的 `Decoration` 集合。**规则：光标所在节点显示 Markdown 源码，其余位置隐藏标记并直接渲染效果**（标题放大、`**`/`~~`/`==` 隐藏、列表符换成圆点、`> ` 与 `#` 隐藏等）。**阅读模式**（工具栏书形按钮 / Ctrl+Alt+R，`readModeField` StateField + `readOnlyComp` 只读）让 `touched` 恒为 false：点击任何位置都不显示源码，仅保留渲染与高亮效果。块级/行内数学公式（`$$…$$`、`$…$`）和 `==高亮==` 不走语法树，用正则按行扫描生成装饰。装饰合并后要做冲突过滤（语法树与自定义正则的 replace 装饰重叠会导致崩溃）。
+`src/livepreview.js` 是 WYSIWYG 的核心：基于 Lezer 语法树 + 光标位置构建 CodeMirror 6 的 `Decoration` 集合。**规则：光标所在节点显示 Markdown 源码，其余位置隐藏标记并直接渲染效果**（标题放大、`**`/`~~`/`==` 隐藏、列表符换成圆点、`> ` 与 `#` 隐藏等）。**阅读模式**（工具栏书形按钮 / Ctrl+Alt+R，`readModeField` StateField + `readOnlyComp` 只读）让 `touched` 恒为 false：点击任何位置都不显示源码，仅保留渲染与高亮效果。块级/行内数学公式（`$$…$$`、`$…$`）、`==高亮==`、脚注（`[^x]` 引用/定义）、`[toc]` 不走语法树，用正则按行扫描生成装饰（脚注与 [toc] 的上下文判断要用窄代码正则——`[^x]`/`[toc]` 会被 Lezer 解析成 Link 节点，CODE_CTX 的 Link 分支会误判）。装饰合并后要做冲突过滤（语法树与自定义正则的 replace 装饰重叠会导致崩溃）。
 
 ### 点击定位的坑（重要，踩过）
 
@@ -65,21 +66,22 @@ CodeMirror 用 `getBoundingClientRect`（不含 margin 的边框盒）建坐标�
 1. **行元素（`Decoration.line` 类）和 block widget 上不要用垂直 `margin`**，用 `padding`（padding 在边框盒内，测量一致）。标题 `.ink-h*`、代码块、mermaid、表格、数学块的间距全部用 padding。
 2. **block replace 的范围要含行尾换行符并设 `inclusiveEnd: false`**：`range(from, Math.min(to + 1, doc.length))` + `Decoration.replace({ block: true, inclusiveEnd: false, ... })`。否则被替换的行会残留空行元素（点击坐标整体下移一行）或吞掉下一行（空行消失）。所有 widget 类（数学/mermaid/表格/分隔线/块级图片）都按此约定。
 
-- `src/widgets.js`：渲染结果用 Widget 实现——公式（KaTeX）、图片、表格、分隔线、任务勾选框、列表符号。点击 Widget 会把光标送回源码位置（`editOnClick`）。
-- `src/editor.js`：装配全部 CodeMirror 扩展，导出 `createEditor` / `setDoc` / 高亮样式 / 两个 Compartment（`readOnlyComp`、`spellcheckComp`）。
+- `src/widgets.js`：渲染结果用 Widget 实现——公式（KaTeX）、图片（支持 `![alt|400]` 宽度语法）、表格、分隔线、任务勾选框、列表符号、`[toc]` 目录块（`TocWidget`，标题签名参与 eq）。点击 Widget 会把光标送回源码位置（`editOnClick`，目录项用同款 mousedown 模式）。
+- `src/editor.js`：装配全部 CodeMirror 扩展，导出 `createEditor` / `setDoc`（带 `isolateHistory`，撤销不跨文档）/ 高亮样式 / 两个 Compartment（`readOnlyComp`、`spellcheckComp`）。
 - `src/commands.js`：格式化命令（`toggleWrap`、`toggleLinePrefix`、`setHeading`、各种插入），工具栏与 `formatKeymap` 共用同一实现。
 - `src/langs.js`：代码块内语法高亮，语言包按需动态加载（`LanguageDescription` + 动态 import）。
 
 ### 其余模块
 
-- `src/main.js`：全部 UI——工具栏、侧栏（大纲/文件列表）、设置面板、状态栏、菜单、拖拽打开、全局快捷键。`boot()` 里装配一切，并在 `window.InkFlow` 上暴露调试 API（测试依赖它）。
+- `src/main.js`：全部 UI——工具栏、侧栏（大纲/文档/搜索三个标签页）、快速打开（Ctrl+P 模糊匹配，候选=文件树+最近+暂存）、设置面板、状态栏、菜单、拖拽打开、全局快捷键、历史版本恢复。粘贴管线在 `boot()` 的 `pasteHandler`：图片优先落盘（桌面版文档旁 / 文件夹树根 `assets/`，失败回退 base64），富文本 HTML 经 `insertHtmlAsMarkdown`（Turndown）转 Markdown。`boot()` 里装配一切，并在 `window.InkFlow` 上暴露调试 API（测试依赖它）。
+- `src/turndown-loader.js`：Turndown + GFM 插件懒加载（富文本粘贴 → Markdown），与 katex/mermaid 同款「失败可重试」模式。
 - `src/obsidian.js`：Obsidian 主题导入器——解析 theme.css 的 CSS 变量（`.theme-dark`/`.theme-light`/`:root`/纯变量块/联合选择器，嵌套 `var()` fallback 多轮展开），映射为 InkFlow 主题变量（`MAP` 表 + 派生色 `color-mix`）。设置面板「导入 CSS 文件」导入，持久化于 `localStorage['inkflow:obsidian-themes']`，注入到 `<style id="obsidian-theme-css">`，主题 key 形如 `obs-<slug>[-light]`。解析/映射为纯函数，`test/obsidian.mjs` 直测（fixture 见 `test/fixtures/sample-theme.css`）。
-- `src/files.js`：优先 File System Access API（可原地保存），否则回退上传/下载；localStorage 文档库 `inkflow:vault`（自动暂存）+ `inkflow:last`（上次打开的文档）。
-- `src/filetree.js`：文件夹树——`showDirectoryPicker` 打开目录、递归遍历（懒加载子目录，深度上限 8）、句柄持久化到 IndexedDB（`inkflow-fs`，重开页面静默恢复）。树状态（展开集合、节点 Map）在 `main.js` 的 `treeState`，渲染逻辑在 `main.js`（`treeSectionHtml`/`treeNodesHtml`）。
-- `src/exporter.js`：marked + highlight.js + KaTeX → 自包含 HTML（KaTeX/hljs/doc CSS 全部内联）；`printToPdf` 用隐藏 iframe 调起 `window.print()`；`downloadFile` 走 Blob URL。mermaid 块导出时在浏览器内渲染为内联 SVG（`buildStandaloneHtmlAsync`），无 mermaid 时结果与同步版一致。
+- `src/files.js`：优先 File System Access API（可原地保存），否则回退上传/下载。本地文档库为 IndexedDB `inkflow-vault`（DB v2）：`docs` 存会话临时备份（关闭清空），`history` 存历史快照（每日一份、保留 7 天、跨会话保留，`putHistorySnapshot` 自带 60s 限频）；另 `inkflow:last`（上次文档 id）。图片落盘：`writeAssetDesktop`（走 fs:write-asset IPC）/`writeAssetBrowser`（写入目录句柄下 assets/，去重命名）。
+- `src/filetree.js`：文件夹树——`showDirectoryPicker` 打开目录、递归遍历（懒加载子目录，深度上限 8）、句柄持久化到 IndexedDB（`inkflow-fs`，重开页面静默恢复）。`searchFolder` 全文搜索（桌面走 fs:grep IPC，浏览器递归 FSA；上限：500 文件/200 结果/单文件 2MB）。树状态（展开集合、节点 Map）在 `main.js` 的 `treeState`，渲染逻辑在 `main.js`（`treeSectionHtml`/`treeNodesHtml`）。
+- `src/exporter.js`：marked + highlight.js + KaTeX → 自包含 HTML（KaTeX/hljs/doc CSS 全部内联）；预处理管线 `replaceToc`（[toc]→锚链接列表）→ `extractFootnotes`（必须先于 marked：`[^x]:` 会被 marked 当链接引用定义吞掉）→ `extractMath`；`printToPdf` 按主题色系（dark/light）设页面底色；`buildRichFragment` 产出剪贴板富文本片段；`downloadFile` 走 Blob URL。mermaid 块导出时在浏览器内渲染为内联 SVG（`buildStandaloneHtmlAsync`），无 mermaid 时结果与同步版一致。
 - `src/mermaid.js`：mermaid 懒加载共享模块（Widget 与导出共用实例）。
 - `src/table-edit.js`：表格源码纯函数操作（解析 → 增删行列/对齐/单元格 → 整表重建），供 TableWidget 右键菜单与单元格编辑使用。
-- `src/utils.js`：`sanitizeHtml`（写入 innerHTML 前的净化）、`panguSpacing`（中英文自动加空格）、`countWords`、`debounce`、`slugify` 等。
+- `src/utils.js`：`sanitizeHtml`（写入 innerHTML 前的净化）、`panguSpacing`（中英文自动加空格）、`countWords`（单趟扫描）、`collectHeadings`（ATX/Setext 标题提取，livepreview 与导出共用）、`debounce`、`slugify` 等。
 
 ### 主题
 
