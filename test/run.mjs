@@ -7,7 +7,7 @@ import { extname, resolve, sep } from 'node:path';
 
 const port = process.env.PORT || '8123';
 const url = process.env.URL || `http://127.0.0.1:${port}/index.html`;
-const tests = ['smoke.mjs', 'tree.mjs', 'table.mjs', 'mermaid.mjs', 'click.mjs', 'shortcut.mjs', 'obsidian.mjs', 'vault.mjs', 'autosave.mjs', 'readmode.mjs', 'regression.mjs'];
+const tests = ['smoke.mjs', 'tree.mjs', 'prompt.mjs', 'table.mjs', 'mermaid.mjs', 'click.mjs', 'shortcut.mjs', 'obsidian.mjs', 'vault.mjs', 'autosave.mjs', 'readmode.mjs', 'regression.mjs'];
 const root = resolve('dist');
 const mime = {
   '.css': 'text/css', '.html': 'text/html', '.js': 'application/javascript',

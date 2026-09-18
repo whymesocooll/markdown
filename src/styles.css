@@ -721,11 +721,12 @@ table.ink-table td.editing { position: relative; }
 .field > label { font-size: 12.5px; color: var(--text-dim); flex: none; width: 108px; }
 .field .ctl { flex: 1; display: flex; align-items: center; gap: 8px; }
 .field input[type="range"] { flex: 1; }
-.field select, .field input[type="text"], .dialog textarea {
+.field select, .field input[type="text"], .dialog textarea, .prompt-input {
   background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px;
   padding: 5px 8px; font-size: 12.5px; font-family: inherit; flex: 1; outline: none;
 }
-.field select:focus, .dialog textarea:focus { border-color: var(--accent); }
+.field select:focus, .dialog textarea:focus, .prompt-input:focus { border-color: var(--accent); }
+.prompt-input { width: 100%; box-sizing: border-box; font-size: 13.5px; padding: 8px 10px; }
 .dialog textarea { width: 100%; min-height: 120px; font-family: var(--font-mono); resize: vertical; }
 .dialog .val { width: 46px; text-align: right; font-size: 12px; color: var(--text-faint); font-family: var(--font-mono); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }

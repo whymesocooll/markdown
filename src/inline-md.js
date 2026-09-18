@@ -36,7 +36,8 @@ export function renderInline(src) {
   s = s.replace(/(^|[^_\w])_([^_\n]+)_/g, '$1<em>$2</em>');
   s = s.replace(/~~([^~]+)~~/g, '<del>$1</del>');
   s = s.replace(/==([^=]+)==/g, '<mark>$1</mark>');
-  s = s.replace(/<br\s*\/?>/gi, '<br>');
+  // 此时 <br> 已被转义为 &lt;br&gt;：还原为真实换行（与导出 HTML 的行为一致）
+  s = s.replace(/&lt;br\s*\/?&gt;/gi, '<br>');
 
   s = s.replace(/\u0001(\d+)\u0001/g, (_, i) => holds[Number(i)]);
   return s;

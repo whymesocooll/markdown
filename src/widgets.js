@@ -200,10 +200,10 @@ export function parseAlign(line) {
   });
 }
 
-export function tableToHtml(src, startLine = 0) {
+export function tableToHtml(src) {
   const lines = src.split('\n');
   const rows = [];
-  lines.forEach((text, i) => { if (text.trim()) rows.push({ text, line: startLine + i }); });
+  lines.forEach((text) => { if (text.trim()) rows.push({ text }); });
   if (rows.length < 2) return null;
   const head = splitTableRow(rows[0].text);
   const align = parseAlign(rows[1].text);
@@ -218,9 +218,9 @@ export function tableToHtml(src, startLine = 0) {
       const a = align[i] ? ` style="text-align:${align[i]}"` : '';
       return `<td data-r="${ri + 2}" data-c="${i}"${a}>${renderInline(c)}</td>`;
     }).join('');
-    return `<tr data-line="${r.line}">${tds}</tr>`;
+    return `<tr>${tds}</tr>`;
   }).join('');
-  return `<table class="ink-table"><thead><tr data-line="${rows[0].line}">${th}</tr></thead><tbody>${trs}</tbody></table>`;
+  return `<table class="ink-table"><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table>`;
 }
 
 /* ---------- 表格右键菜单（全局单例） ---------- */
@@ -281,11 +281,10 @@ function hideTableMenu() {
 }
 
 export class TableWidget extends WidgetType {
-  constructor(src, from, lineStarts) {
+  constructor(src, from) {
     super();
     this.src = src;
     this.from = from;
-    this.lineStarts = lineStarts; // 行号 -> 文档偏移
     this.needsKatex = src.indexOf('$') > -1; // 单元格含行内公式
     this.katexReady = this.needsKatex && !!katexNow(); // 就绪状态纳入 eq：加载完成后重建重绘
   }
@@ -295,7 +294,7 @@ export class TableWidget extends WidgetType {
     const wrap = document.createElement('div');
     wrap.className = 'ink-table-wrap';
     const paint = () => {
-      const html = tableToHtml(this.src, 0);
+      const html = tableToHtml(this.src);
       wrap.innerHTML = sanitizeHtml(html || `<pre>${escapeHtml(this.src)}</pre>`);
     };
     paint();
@@ -353,7 +352,8 @@ export class TableWidget extends WidgetType {
     const finish = (commit) => {
       if (done) return;
       done = true;
-      const text = box.value;
+      // 单元格不允许真实换行：换行转为 <br>（渲染时还原为换行），避免破坏单行的表格源码
+      const text = box.value.replace(/\r?\n/g, '<br>');
       cell.classList.remove('editing');
       box.remove();
       if (!commit) return;
@@ -396,18 +396,6 @@ export class TableWidget extends WidgetType {
     v.dispatch({ changes: { from, to, insert: ns } });
     v.focus();
   }
-}
-
-export class CodeInfoWidget extends WidgetType {
-  constructor(lang) { super(); this.lang = lang; }
-  eq(o) { return o.lang === this.lang; }
-  toDOM() {
-    const el = document.createElement('span');
-    el.className = 'ink-code-lang';
-    el.textContent = this.lang;
-    return el;
-  }
-  ignoreEvent() { return true; }
 }
 
 /* ---------- Mermaid 图 ---------- */

@@ -243,10 +243,8 @@ function buildDeco(state) {
           const last = doc.lineAt(node.to);
           if (!touched(first.from, last.to)) {
             const src = doc.sliceString(first.from, last.to);
-            const starts = [];
-            for (let ln = first.number; ln <= last.number; ln++) starts.push(doc.line(ln).from);
             blocks.push(Decoration.replace({
-              widget: new TableWidget(src, first.from, starts), block: true, inclusiveEnd: false
+              widget: new TableWidget(src, first.from), block: true, inclusiveEnd: false
             }).range(first.from, Math.min(last.to + 1, doc.length)));
             return false;
           }

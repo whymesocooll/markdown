@@ -143,6 +143,11 @@ export async function createFile(dirHandle, name) {
   if (isDesktop) return desktopCreateFile(dirHandle, name);
   if (!/\.(md|markdown|txt)$/i.test(name)) name += '.md';
   try {
+    // 先探测重名：getFileHandle({create:true}) 对已存在文件不报错，会静默打开旧文件
+    await dirHandle.getFileHandle(name);
+    return null;
+  } catch (e) { /* 不存在，继续创建 */ }
+  try {
     return await dirHandle.getFileHandle(name, { create: true });
   } catch (e) {
     return null; // NameError 等

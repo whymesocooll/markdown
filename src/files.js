@@ -22,11 +22,17 @@ export async function openFile() {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.md,.markdown,.mdown,.mkd,.txt,text/markdown,text/plain';
+    const cancelled = () => {
+      const err = new Error('cancelled');
+      err.name = 'AbortError'; // 与 FSA 选择器取消一致，openDoc 据此静默返回
+      reject(err);
+    };
     input.onchange = async () => {
       const file = input.files && input.files[0];
-      if (!file) return reject(new Error('cancelled'));
+      if (!file) return cancelled();
       resolve({ name: file.name, text: await file.text(), handle: null });
     };
+    input.oncancel = cancelled; // 用户取消选择时结束 Promise，而不是永远挂起
     input.click();
   });
 }

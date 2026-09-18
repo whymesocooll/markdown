@@ -13,7 +13,10 @@ export function loadMermaid() {
 }
 
 export function mermaidTheme() {
-  return ['light', 'solarized-light', 'paper-saffron'].includes(document.documentElement.dataset.theme) ? 'light' : 'dark';
+  const t = document.documentElement.dataset.theme || '';
+  if (t === 'light' || t === 'solarized-light' || t === 'paper-saffron') return 'light';
+  if (t.endsWith('-light')) return 'light'; // 导入的 Obsidian 亮色主题（obs-*-light）
+  return 'dark';
 }
 
 /** 渲染 mermaid 源码为 SVG 字符串（id 每次唯一，mermaid 不允许重复 id） */

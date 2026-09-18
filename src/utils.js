@@ -64,13 +64,25 @@ export function panguSpacing(text) {
   }).join('\n');
 }
 
-// 统计：中文按字、英文按词
+// 统计：中文按字、英文按词。单趟扫描代替两遍正则 match——大文档上 /g match 会
+// 为每个命中分配数组元素，防抖周期内反复执行时 GC 压力明显
 export function countWords(text) {
   const stripped = text
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/`[^`]*`/g, ' ');
-  const cjk = (stripped.match(new RegExp(`[${CJK}]`, 'g')) || []).length;
-  const latin = (stripped.match(/[A-Za-z0-9_\u00c0-\u024f]+/g) || []).length;
+  let cjk = 0, latin = 0, inWord = false;
+  for (let i = 0; i < stripped.length; i++) {
+    const c = stripped.charCodeAt(i);
+    if ((c >= 0x2e80 && c <= 0x30ff) || (c >= 0x3400 && c <= 0x4dbf)
+      || (c >= 0x4e00 && c <= 0x9fff) || (c >= 0xf900 && c <= 0xfaff)) {
+      cjk++; inWord = false;
+    } else if ((c >= 0x30 && c <= 0x39) || (c >= 0x41 && c <= 0x5a) || (c >= 0x61 && c <= 0x7a)
+      || c === 0x5f || (c >= 0xc0 && c <= 0x24f)) {
+      if (!inWord) { latin++; inWord = true; }
+    } else {
+      inWord = false;
+    }
+  }
   return { words: cjk + latin, chars: text.length, cjk, latin };
 }
 

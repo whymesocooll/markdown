@@ -182,6 +182,17 @@
   <div class="dialog-actions" id="confirmActions"></div>
 </div>
 
+<div class="overlay hidden" id="promptOverlay"></div>
+<div class="dialog hidden" id="promptDlg" role="dialog" aria-modal="true" aria-labelledby="promptTitle">
+  <h3 id="promptTitle"></h3>
+  <p class="confirm-message hidden" id="promptMsg"></p>
+  <input type="text" id="promptInput" class="prompt-input" spellcheck="false" autocomplete="off">
+  <div class="dialog-actions">
+    <button class="btn ghost" id="promptCancel">取消</button>
+    <button class="btn primary" id="promptOk">确定</button>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script type="module" src="app.js"></script>

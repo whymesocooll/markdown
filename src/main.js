@@ -75,6 +75,7 @@ const app = {
   checkpointError: null,
   saveSeq: 0,
   closing: false,
+  forceClose: false, // 桌面版「不保存关闭」已确认，放行 beforeunload
   sideTab: 'outline',
   mtime: null,
   path: '',
@@ -198,6 +199,7 @@ async function importObsidianTheme(file) {
   return base;
 }
 function applyAppearance() {
+  const prevTheme = document.documentElement.dataset.theme;
   const th = effectiveTheme();
   document.documentElement.dataset.theme = th;
   const root = document.documentElement.style;
@@ -217,8 +219,9 @@ function applyAppearance() {
   $('#btnFocus').classList.toggle('on', !!settings.focusMode);
   $('#btnTypewriter').classList.toggle('on', !!settings.typewriter);
   $('#btnSidebar').classList.toggle('active', !!settings.sidebar);
-  // 主题变化时刷新装饰，让 mermaid 等带主题的 widget 重建
-  if (app.view) app.view.dispatch({ effects: refreshEffect.of(null) });
+  // 仅主题真正变化时刷新装饰（mermaid 等 widget 需要重建换肤）；
+  // 字号/行高/页宽走 CSS 变量即可，CM 会自动重测，不必每次滑块拖动都全量重建装饰
+  if (app.view && prevTheme !== th) app.view.dispatch({ effects: refreshEffect.of(null) });
 }
 mq.addEventListener('change', () => { if (settings.theme === 'auto') applyAppearance(); });
 
@@ -338,8 +341,8 @@ function sameHandle(a, b) {
   return a === b;
 }
 
-async function checkpoint({ notifyFailure = true } = {}) {
-  const snapshot = { id: app.docId, name: app.name, text: text(), seq: ++app.saveSeq };
+async function checkpoint({ notifyFailure = true, snapshotText } = {}) {
+  const snapshot = { id: app.docId, name: app.name, text: snapshotText ?? text(), seq: ++app.saveSeq };
   app.checkpointState = 'saving';
   app.checkpointError = null;
   renderSaveState();
@@ -362,13 +365,14 @@ async function checkpoint({ notifyFailure = true } = {}) {
   return r;
 }
 
-async function autoSaveFile({ checkpointOk } = {}) {
+async function autoSaveFile({ checkpointOk, snapshotText } = {}) {
   if (!app.handle || !app.dirty) return;
+  if (app.saveState === 'conflict') return; // 冲突未处理前停止自动覆盖，避免每轮防抖都重试并反复报错
   const snapshot = {
     docId: app.docId,
     handle: app.handle,
     name: app.name,
-    text: text(),
+    text: snapshotText ?? text(),
     mtime: app.mtime
   };
   app.saveState = 'saving-file';
@@ -404,8 +408,9 @@ async function autoSaveFile({ checkpointOk } = {}) {
 
 const autosave = debounce(async () => {
   if (app.closing) return;
-  const local = await checkpoint();
-  await autoSaveFile({ checkpointOk: local.ok });
+  const t = text(); // 一次序列化，本地暂存与文件保存共用，避免防抖到期时全文序列化两遍
+  const local = await checkpoint({ snapshotText: t });
+  await autoSaveFile({ checkpointOk: local.ok, snapshotText: t });
 }, () => Math.max(200, settings.autosaveMs || 700));
 
 // 临时备份只服务于当前会话。关闭桌面窗口前先落盘，再清空全部临时内容。
@@ -452,13 +457,29 @@ function buildOutline() {
   const doc = app.view.state.doc;
   const items = [];
   let fence = null;
+  let prevText = ''; // 上一个非空正文行，用于识别 Setext 标题
   for (let i = 1; i <= doc.lines; i++) {
     const t = doc.line(i).text;
     const fm = /^\s{0,3}(```+|~~~+)/.exec(t);
-    if (fence) { if (fm && t.trim().startsWith(fence)) fence = null; continue; }
-    if (fm) { fence = fm[1]; continue; }
+    if (fence) { if (fm && t.trim().startsWith(fence)) { fence = null; prevText = ''; } continue; }
+    if (fm) { fence = fm[1]; prevText = ''; continue; }
+    // Setext 标题：正文行的下一行是 === (h1) / --- (h2)；前一行是标题或列表、或空行后的 ---（分隔线）不算
+    const setext = /^\s{0,3}(=+|-+)\s*$/.exec(t);
+    const isAtx = /^(#{1,6})\s+/.test(prevText);
+    const isList = /^\s*([-*+]|\d+[.)])\s/.test(prevText);
+    if (setext && prevText && !isAtx && !isList) {
+      const level = setext[1][0] === '=' ? 1 : 2;
+      items.push({ level, title: prevText.replace(/[*_`~]/g, '').trim() || '(空标题)', line: i - 1, pos: doc.line(i - 1).from });
+      prevText = '';
+      continue;
+    }
     const m = /^(#{1,6})\s+(.*)$/.exec(t);
-    if (m) items.push({ level: m[1].length, title: m[2].replace(/[*_`~]/g, '').trim() || '(空标题)', line: i, pos: doc.line(i).from });
+    if (m) {
+      items.push({ level: m[1].length, title: m[2].replace(/[*_`~]/g, '').trim() || '(空标题)', line: i, pos: doc.line(i).from });
+      prevText = '';
+      continue;
+    }
+    prevText = t.trim() ? t : '';
   }
   outline = items;
   const panel = $('#panelOutline');
@@ -495,7 +516,9 @@ function renderFiles() {
 // 打字期间每 0.7s 重建一次树 DOM 代价过高（且会丢失筛选输入框焦点）
 function refreshVaultSection() {
   const el = $('#vaultSection');
-  if (el) el.innerHTML = vaultSectionHtml();
+  // 面板不可见（侧栏收起 / 停在大纲页）时跳过 DOM 更新，切回文档页时补一次
+  if (!el || !el.offsetParent) return;
+  el.innerHTML = vaultSectionHtml();
 }
 
 function treeSectionHtml() {
@@ -615,12 +638,14 @@ async function openFolderTree() {
 
 async function handleTreeAction(act) {
   if (act === 'new') {
-    const name = window.prompt('新文件名：', '未命名.md');
+    // Electron 不支持 window.prompt，用应用内输入对话框
+    const name = await showPrompt({ title: '新建 Markdown 文件', value: '未命名.md', placeholder: '文件名（缺省扩展名自动补 .md）' });
     if (!name) return;
     const h = await FT.createFile(FT.rootDir(), name);
     if (!h) { toast('创建失败：文件已存在或名称无效'); return; }
     const r = await FT.readFile(h);
     await loadContent(r.name, r.text, r.handle, r.mtime);
+    await loadTreeFromRoot(FT.rootDir()); // 新文件立即出现在树中，而不是等手动刷新
     renderFiles();
     toast(`已创建 ${r.name}`);
   } else if (act === 'refresh') {
@@ -966,9 +991,38 @@ function dismissConfirm(value) {
   if (r) r(value);
 }
 document.addEventListener('keydown', (e) => {
+  if (promptResolve && e.key === 'Escape') { e.preventDefault(); dismissPrompt(null); return; }
   if (!confirmResolve) return;
   if (e.key === 'Escape') { e.preventDefault(); dismissConfirm('cancel'); }
 });
+
+/* ---------------- 通用输入对话框 ---------------- */
+// showPrompt({ title, message, value, placeholder, ok }) -> Promise<string|null>（取消返回 null）
+// Electron 不支持 window.prompt，文件树新建文件等需要输入的场景统一走这里
+let promptResolve = null;
+function showPrompt({ title, message = '', value = '', placeholder = '', ok = '确定' } = {}) {
+  if (promptResolve) promptResolve(null); // 已有对话框：直接取消旧的
+  return new Promise((resolve) => {
+    promptResolve = resolve;
+    $('#promptTitle').textContent = title || '';
+    $('#promptMsg').textContent = message;
+    $('#promptMsg').classList.toggle('hidden', !message);
+    const input = $('#promptInput');
+    input.value = value;
+    input.placeholder = placeholder;
+    $('#promptOk').textContent = ok;
+    $('#promptOverlay').classList.remove('hidden');
+    $('#promptDlg').classList.remove('hidden');
+    input.focus();
+    input.select();
+  });
+}
+function dismissPrompt(value) {
+  $('#promptOverlay').classList.add('hidden');
+  $('#promptDlg').classList.add('hidden');
+  const r = promptResolve; promptResolve = null;
+  if (r) r(value);
+}
 
 function dismissOnboarding() {
   try { localStorage.setItem('inkflow:onboarded', '1'); } catch (e) { /* ignore */ }
@@ -1090,7 +1144,7 @@ async function boot() {
         }
         // 不保存关闭：不落盘，清理临时备份后关闭
         const cleared = await F.clearDocs();
-        if (cleared.ok) desktopCloseReady();
+        if (cleared.ok) { app.forceClose = true; desktopCloseReady(); }
         else toast('清理临时备份失败，已保留数据，请手动关闭', { type: 'error', duration: 7000 });
         return;
       }
@@ -1240,6 +1294,7 @@ function wireEvents() {
     $$('.side-tabs button').forEach((x) => x.classList.toggle('active', x === b));
     $('#panelOutline').classList.toggle('hidden', app.sideTab !== 'outline');
     $('#panelFiles').classList.toggle('hidden', app.sideTab !== 'files');
+    if (app.sideTab === 'files') refreshVaultSection(); // 隐藏期间被跳过的暂存列表更新在此补上
   });
   $('#panelOutline').addEventListener('click', (e) => {
     const b = e.target.closest('.outline-item');
@@ -1252,11 +1307,9 @@ function wireEvents() {
     });
     app.view.focus();
   });
-  // 文件树搜索（input 事件委托；重渲染后恢复焦点与光标）。只注册一次，
-  // 不能放进下方 click 处理器内——那会随每次点击重复注册
-  $('#panelFiles').addEventListener('input', (e) => {
-    if (e.target.id !== 'treeSearch') return;
-    treeState.filter = e.target.value.trim();
+  // 文件树搜索（input 事件委托；防抖重建后恢复焦点与光标，大目录下避免每键全量重建面板）。
+  // 只注册一次，不能放进下方 click 处理器内——那会随每次点击重复注册
+  const scheduleTreeSearch = debounce(() => {
     renderFiles();
     const inp = $('#treeSearch');
     if (inp) {
@@ -1264,6 +1317,11 @@ function wireEvents() {
       const end = inp.value.length;
       inp.setSelectionRange(end, end);
     }
+  }, 120);
+  $('#panelFiles').addEventListener('input', (e) => {
+    if (e.target.id !== 'treeSearch') return;
+    treeState.filter = e.target.value.trim();
+    scheduleTreeSearch();
   });
   $('#panelFiles').addEventListener('click', async (e) => {
     const recentDel = e.target.closest('[data-recent-del]');
@@ -1388,6 +1446,13 @@ function wireEvents() {
   // 设置面板
   $('#overlay').addEventListener('click', closeSettings);
   $('#btnCloseSettings').addEventListener('click', closeSettings);
+  // 输入对话框（Electron 无 window.prompt 的替代）
+  $('#promptOk').addEventListener('click', () => dismissPrompt($('#promptInput').value.trim() || null));
+  $('#promptCancel').addEventListener('click', () => dismissPrompt(null));
+  $('#promptOverlay').addEventListener('click', () => dismissPrompt(null));
+  $('#promptInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); dismissPrompt($('#promptInput').value.trim() || null); }
+  });
   $('#setTheme').addEventListener('change', (e) => { settings.theme = e.target.value; saveSettings(); applyAppearance(); });
   $('#setFont').addEventListener('change', (e) => { settings.fontKind = e.target.value; saveSettings(); applyAppearance(); });
   $('#setSize').addEventListener('input', (e) => {
@@ -1488,6 +1553,9 @@ function wireEvents() {
   });
 
   window.addEventListener('beforeunload', (e) => {
+    // 桌面版「不保存关闭」已由用户确认并置 forceClose，放行 close-ready 触发的关闭，
+    // 否则这里会因 dirty 仍为 true 而把窗口关掉的动作再次取消（窗口静默留在原地）
+    if (app.forceClose) return;
     if (app.dirty || checkpointNeedsAttention()) { e.preventDefault(); e.returnValue = ''; }
   });
 }

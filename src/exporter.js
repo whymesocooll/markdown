@@ -40,7 +40,7 @@ function extractMath(md) {
     if (fm) { fence = fm[1]; out.push(line); continue; }
 
     if (/^\s{0,3}\$\$/.test(line)) {
-      const single = /^\s{0,3}\$\$([\s\S]+)\$\$\s*$/.exec(line);
+      const single = /^\s{0,3}\$\$([\s\S]+?)\$\$\s*$/.exec(line);
       if (single) {
         store.push({ tex: single[1], display: true });
         out.push(MATH_TOKEN(store.length - 1));
@@ -167,10 +167,10 @@ export async function renderMarkdownAsync(md, { theme = 'light' } = {}) {
   for (let i = 0; i < mmstore.length; i++) {
     // 图表配色跟随文档色系，避免暗色文档里嵌入浅色图表
     const svg = await renderMermaid(mmstore[i], theme === 'dark' ? 'dark' : 'light');
-    s = s.replace(
-      new RegExp(`<p>\\s*${MERMAID_TOKEN(i)}\\s*<\\/p>`),
-      `<div class="mermaid-block">${svg}</div>`
-    ).replace(new RegExp(MERMAID_TOKEN(i), 'g'), `<div class="mermaid-block">${svg}</div>`);
+    const html = `<div class="mermaid-block">${svg}</div>`;
+    // 用函数形式替换：SVG 含 $&、$' 等序列时，字符串替换会破坏输出
+    s = s.replace(new RegExp(`<p>\\s*${MERMAID_TOKEN(i)}\\s*<\\/p>`), () => html)
+      .replace(new RegExp(MERMAID_TOKEN(i), 'g'), () => html);
   }
   return s;
 }

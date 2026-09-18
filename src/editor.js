@@ -4,7 +4,7 @@ import {
   EditorView, keymap, drawSelection, dropCursor, rectangularSelection,
   crosshairCursor, highlightActiveLine, placeholder, highlightSpecialChars
 } from '@codemirror/view';
-import { history, historyKeymap, defaultKeymap, indentWithTab } from '@codemirror/commands';
+import { history, historyKeymap, defaultKeymap, indentWithTab, isolateHistory } from '@codemirror/commands';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { syntaxHighlighting, HighlightStyle, indentOnInput, indentUnit, bracketMatching } from '@codemirror/language';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
@@ -101,6 +101,8 @@ export function setDoc(view, text) {
   view.dispatch({
     changes: { from: 0, to: view.state.doc.length, insert: text },
     selection: EditorSelection.cursor(0),
-    scrollIntoView: true
+    scrollIntoView: true,
+    // 隔离撤销历史：打开/新建另一篇文档后 Ctrl+Z 不会把上一篇的内容撤销进当前文档
+    annotations: isolateHistory.of('full')
   });
 }
