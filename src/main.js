@@ -1412,6 +1412,55 @@ async function openQuickOpenItem(i) {
   }
 }
 
+/* ---------------- 文件夹全文搜索 ---------------- */
+const searchState = { query: '', results: [], searching: false };
+function highlightSnippet(text, q) {
+  const idx = text.toLowerCase().indexOf(q.toLowerCase());
+  if (idx < 0) return escapeAttr(text);
+  return escapeAttr(text.slice(0, idx)) + '<mark>' + escapeAttr(text.slice(idx, idx + q.length)) + '</mark>' + escapeAttr(text.slice(idx + q.length));
+}
+function searchResultsHtml() {
+  if (!FT.hasRoot()) return '<div class="empty-tip">先在「文档」页打开文件夹，<br>才能搜索其中内容。</div>';
+  if (!searchState.results.length) return searchState.query ? '<div class="empty-tip">没有匹配的内容</div>' : '';
+  return searchState.results.map((r, i) =>
+    `<button class="search-item" data-i="${i}" title="${escapeAttr(r.file.path + ' 第 ' + r.line + ' 行')}"><span class="search-file">${escapeAttr(r.file.path)}</span><span class="search-line">${highlightSnippet(r.text, searchState.query)}</span></button>`
+  ).join('');
+}
+function renderSearchPanel() {
+  const el = $('#panelSearch');
+  el.innerHTML = `
+    <div style="padding:0 10px 6px">
+      <input type="text" id="searchInput" placeholder="在文件夹中搜索全文…" value="${escapeAttr(searchState.query)}"
+        style="width:100%;box-sizing:border-box;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;outline:none">
+      <div id="searchMeta" style="font-size:11px;color:var(--text-faint);margin-top:4px">${searchState.searching ? '搜索中…' : (searchState.results.length ? `${searchState.results.length} 条匹配` : '')}</div>
+    </div>
+    <div class="tree" id="searchResults">${searchResultsHtml()}</div>`;
+}
+async function runSearch() {
+  if (!searchState.query || !FT.hasRoot()) {
+    searchState.results = [];
+    searchState.searching = false;
+    const list = $('#searchResults');
+    const meta = $('#searchMeta');
+    if (list) list.innerHTML = searchResultsHtml();
+    if (meta) meta.textContent = '';
+    return;
+  }
+  searchState.searching = true;
+  const meta = $('#searchMeta');
+  if (meta) meta.textContent = '搜索中…';
+  try {
+    searchState.results = await FT.searchFolder(searchState.query);
+  } catch (e) {
+    searchState.results = [];
+  }
+  searchState.searching = false;
+  const list = $('#searchResults');
+  const meta2 = $('#searchMeta');
+  if (list) list.innerHTML = searchResultsHtml();
+  if (meta2) meta2.textContent = `${searchState.results.length} 条匹配`;
+}
+
 function wireEvents() {
   // 工具栏
   $('#toolbar').addEventListener('mousedown', (e) => {
@@ -1484,7 +1533,9 @@ function wireEvents() {
     $$('.side-tabs button').forEach((x) => x.classList.toggle('active', x === b));
     $('#panelOutline').classList.toggle('hidden', app.sideTab !== 'outline');
     $('#panelFiles').classList.toggle('hidden', app.sideTab !== 'files');
+    $('#panelSearch').classList.toggle('hidden', app.sideTab !== 'search');
     if (app.sideTab === 'files') refreshVaultSection(); // 隐藏期间被跳过的暂存列表更新在此补上
+    if (app.sideTab === 'search') renderSearchPanel(); // 首次切换时渲染搜索框
   });
   $('#panelOutline').addEventListener('click', (e) => {
     const b = e.target.closest('.outline-item');
@@ -1684,6 +1735,34 @@ function wireEvents() {
     if (b) openQuickOpenItem(Number(b.dataset.i));
   });
   $('#qoOverlay').addEventListener('click', closeQuickOpen);
+
+  // 全文搜索：输入防抖后执行，完成后只更新结果区（保住输入框焦点）
+  const scheduleSearch = debounce(runSearch, 300);
+  $('#panelSearch').addEventListener('input', (e) => {
+    if (e.target.id !== 'searchInput') return;
+    searchState.query = e.target.value.trim();
+    scheduleSearch();
+  });
+  $('#panelSearch').addEventListener('click', async (e) => {
+    const b = e.target.closest('.search-item');
+    if (!b) return;
+    const r = searchState.results[Number(b.dataset.i)];
+    if (!r) return;
+    if (!(await confirmDiscard())) return;
+    try {
+      const rd = await FT.readFile(r.file.handle);
+      await loadContent(rd.name, rd.text, r.file.handle, rd.mtime || null);
+      const doc = app.view.state.doc;
+      if (r.line <= doc.lines) {
+        const pos = doc.line(r.line).from;
+        app.view.dispatch({ selection: EditorSelection.cursor(pos), effects: EditorView.scrollIntoView(pos, { y: 'center' }) });
+      }
+      app.view.focus();
+      toast(`已打开 ${rd.name}`);
+    } catch (err) {
+      toast('打开失败：' + (err.message || err), { type: 'error', duration: 7000 });
+    }
+  });
 
   // 全局快捷键
   window.addEventListener('keydown', (e) => {

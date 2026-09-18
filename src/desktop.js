@@ -16,6 +16,10 @@ export function desktopCloseFolder() {
 export async function desktopWalkDir(handle, depth) {
   return D().walkDir({ path: handle.path }, depth || 0);
 }
+/** 文件夹全文搜索（桌面版走主进程，返回 [{ name, path, line, text, handle }]） */
+export function desktopGrep(dir, query) {
+  return D().grep(dir, query);
+}
 export async function desktopReadFile(handle) {
   // 传完整句柄（含 name），否则主进程 fs:read 拿不到文件名
   return D().readFile(handle);

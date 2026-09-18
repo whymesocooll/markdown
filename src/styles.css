@@ -766,6 +766,13 @@ table.ink-table td.editing { position: relative; }
 .ink-toc-item:hover { background: var(--sel, var(--panel-2)); }
 .ink-toc-lv { color: var(--text-faint); font-size: 10.5px; margin-right: 6px; }
 
+/* ---------- 全文搜索 ---------- */
+.search-item { display: block; width: 100%; text-align: left; background: none; border: 0; color: var(--text); padding: 5px 10px; cursor: pointer; font-family: inherit; }
+.search-item:hover { background: var(--sel, var(--bg-soft)); }
+.search-file { display: block; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-line { display: block; font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-line mark { background: var(--mark-bg); color: inherit; border-radius: 2px; }
+
 .toast {
   position: fixed; left: 50%; bottom: 44px; transform: translateX(-50%);
   background: var(--panel); border: 1px solid var(--border); color: var(--text);

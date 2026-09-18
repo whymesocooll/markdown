@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('inkflowDesktop', {
   restoreFolder: () => ipcRenderer.invoke('folder:restore'),
   closeFolder: () => ipcRenderer.invoke('folder:close'),
   walkDir: (handle, depth) => ipcRenderer.invoke('fs:walk', handle, depth),
+  grep: (dir, query) => ipcRenderer.invoke('fs:grep', dir, query),
   readFile: (handle) => ipcRenderer.invoke('fs:read', handle),
   statFile: (p) => ipcRenderer.invoke('fs:stat', p),
   createFile: (handle, name) => ipcRenderer.invoke('fs:create', handle, name),

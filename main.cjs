@@ -184,6 +184,44 @@ ipcMain.handle('folder:close', async () => {
 
 ipcMain.handle('fs:walk', (_e, handle, depth) => walkDir(handle.path, depth || 0));
 
+// 文件夹全文搜索：递归遍历 Markdown/文本文件逐行匹配（忽略大小写），
+// 每文件最多 5 条、共 200 条、单文件 2MB、深度 8 层，防止巨型目录卡死
+ipcMain.handle('fs:grep', async (_e, dirPath, query) => {
+  const results = [];
+  if (!dirPath || !query) return results;
+  const q = String(query).toLowerCase();
+  let scanned = 0;
+  const walk = async (dir, prefix, depth) => {
+    if (depth > MAX_DEPTH || scanned >= 500 || results.length >= 200) return;
+    let entries = [];
+    try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch (e) { return; }
+    for (const e of entries) {
+      if (results.length >= 200 || scanned >= 500) return;
+      const p = prefix ? `${prefix}/${e.name}` : e.name;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) await walk(full, p, depth + 1);
+      else if (e.isFile() && MD_RE.test(e.name)) {
+        scanned++;
+        try {
+          const st = await fs.stat(full);
+          if (st.size > 2 * 1024 * 1024) continue;
+          const text = await fs.readFile(full, 'utf8');
+          const lines = text.split('\n');
+          let perFile = 0;
+          for (let i = 0; i < lines.length && results.length < 200; i++) {
+            if (lines[i].toLowerCase().includes(q)) {
+              results.push({ name: e.name, path: p, line: i + 1, text: lines[i].slice(0, 200), handle: fileHandle(full) });
+              if (++perFile >= 5) break;
+            }
+          }
+        } catch (err) { /* 无权限/编码异常跳过 */ }
+      }
+    }
+  };
+  await walk(dirPath, '', 0);
+  return results;
+});
+
 ipcMain.handle('fs:read', async (_e, handle) => {
   const text = await fs.readFile(handle.path, 'utf8');
   const stat = await fs.stat(handle.path);

@@ -4,7 +4,7 @@
 import { hasFS } from './files.js';
 import {
   isDesktop, desktopOpenFolder, desktopRestoreFolder, desktopCloseFolder,
-  desktopWalkDir, desktopReadFile, desktopCreateFile
+  desktopWalkDir, desktopReadFile, desktopCreateFile, desktopGrep
 } from './desktop.js';
 
 const DB_NAME = 'inkflow-fs';
@@ -136,6 +136,48 @@ export async function readFile(handle) {
   if (isDesktop) return desktopReadFile(handle);
   const file = await handle.getFile();
   return { name: file.name, text: await file.text(), handle };
+}
+
+/** 文件夹全文搜索：桌面版走主进程；浏览器递归遍历文件逐行匹配。返回 [{ file, line, text }] */
+export async function searchFolder(query) {
+  if (!rootHandle || !query) return [];
+  if (isDesktop) {
+    const r = await desktopGrep(rootHandle.path, query);
+    return r.map((m) => ({ file: { name: m.name, path: m.path, handle: m.handle }, line: m.line, text: m.text }));
+  }
+  const q = query.toLowerCase();
+  const results = [];
+  let scanned = 0;
+  const collect = (text, file) => {
+    const lines = text.split('\n');
+    let perFile = 0;
+    for (let i = 0; i < lines.length && results.length < 200; i++) {
+      if (lines[i].toLowerCase().includes(q)) {
+        results.push({ file, line: i + 1, text: lines[i].slice(0, 200) });
+        if (++perFile >= 5) break;
+      }
+    }
+  };
+  const walk = async (dir, prefix, depth) => {
+    if (depth > MAX_DEPTH || scanned >= 500 || results.length >= 200) return;
+    let entries = [];
+    try { for await (const e of dir.values()) entries.push(e); } catch (e) { return; }
+    for (const e of entries) {
+      if (results.length >= 200 || scanned >= 500) return;
+      const p = prefix ? `${prefix}/${e.name}` : e.name;
+      if (e.kind === 'directory') await walk(e, p, depth + 1);
+      else if (MD_RE.test(e.name)) {
+        scanned++;
+        try {
+          const file = await e.getFile();
+          if (file.size > 2 * 1024 * 1024) continue;
+          collect(await file.text(), { name: e.name, path: p, handle: e });
+        } catch (err) { /* 跳过不可读文件 */ }
+      }
+    }
+  };
+  await walk(rootHandle, '', 0);
+  return results;
 }
 
 /** 在目录下新建 Markdown 文件（重名时返回 null） */
