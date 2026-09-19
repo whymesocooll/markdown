@@ -1082,8 +1082,7 @@ function dismissConfirm(value) {
   $('#confirmDlg').classList.add('hidden');
   const r = confirmResolve; confirmResolve = null;
   if (r) r(value);
-}
-document.addEventListener('keydown', (e) => {
+}document.addEventListener('keydown', (e) => {
   if (promptResolve && e.key === 'Escape') { e.preventDefault(); dismissPrompt(null); return; }
   if (!confirmResolve) return;
   if (e.key === 'Escape') { e.preventDefault(); dismissConfirm('cancel'); }
@@ -1115,24 +1114,6 @@ function dismissPrompt(value) {
   $('#promptDlg').classList.add('hidden');
   const r = promptResolve; promptResolve = null;
   if (r) r(value);
-}
-
-function dismissOnboarding() {
-  try { localStorage.setItem('inkflow:onboarded', '1'); } catch (e) { /* ignore */ }
-  const el = $('#onboard');
-  if (el) el.classList.add('hidden');
-}
-function setupOnboarding() {
-  let onboarded = false;
-  try { onboarded = !!localStorage.getItem('inkflow:onboarded'); } catch (e) { /* ignore */ }
-  const el = $('#onboard');
-  // 自动化测试环境（Puppeteer 等）跳过引导卡片，避免覆盖编辑区干扰点击；真实使用不受影响
-  if (onboarded || !el || navigator.webdriver) return;
-  el.classList.remove('hidden');
-  $('#onbdOpen').addEventListener('click', () => { dismissOnboarding(); openDoc(); });
-  $('#onbdFolder').addEventListener('click', () => { dismissOnboarding(); openFolderTree(); });
-  $('#onbdNew').addEventListener('click', () => { dismissOnboarding(); newDoc(); });
-  $('#onbdClose').addEventListener('click', dismissOnboarding);
 }
 
 /* ---------------- 启动 ---------------- */
@@ -1267,7 +1248,6 @@ async function boot() {
   buildOutline();
   renderFiles();
   updateStatus();
-  setupOnboarding();
   // Obsidian 主题 CSS 需在 applyAppearance 之前注入（当前主题可能是导入的）
   loadObsidianThemes();
   injectObsidianCss();
