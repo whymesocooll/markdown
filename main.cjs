@@ -434,6 +434,9 @@ app.whenReady().then(() => {
               location.reload(); })()`);
           return;
         }
+        // 欢迎页不进入截图：先关闭再等渲染稳定
+        await win.webContents.executeJavaScript(
+          'window.InkFlow && window.InkFlow.dismissWelcome && window.InkFlow.dismissWelcome()').catch(() => {});
         await new Promise((r) => setTimeout(r, 2500));
         const image = await win.capturePage();
         require('node:fs').writeFileSync(process.env.INKFLOW_SHOT, image.toPNG());

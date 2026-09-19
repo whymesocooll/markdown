@@ -773,6 +773,37 @@ table.ink-table td.editing { position: relative; }
 .search-line { display: block; font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .search-line mark { background: var(--mark-bg); color: inherit; border-radius: 2px; }
 
+/* ---------- 启动欢迎页（全屏烟花） ---------- */
+.welcome {
+  position: fixed; inset: 0; z-index: 250; overflow: hidden; cursor: pointer;
+  background: radial-gradient(120% 100% at 50% 0%, #121624 0%, #06070c 70%);
+  transition: opacity .42s ease;
+}
+.welcome.leave { opacity: 0; pointer-events: none; }
+.welcome canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.welcome-inner {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center; pointer-events: none;
+}
+@keyframes welcomeRise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+.welcome-title {
+  margin: 0; font-family: var(--font-serif); font-weight: 600;
+  font-size: clamp(46px, 9vw, 92px); line-height: 1.05; letter-spacing: .04em;
+  background: linear-gradient(180deg, #ffffff 20%, #aebad4 90%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 0 26px rgba(150, 180, 255, .28));
+  animation: welcomeRise .7s cubic-bezier(.2, .7, .2, 1) .1s both;
+}
+.welcome-tag {
+  margin: 14px 0 0; color: #aab3c5; font-size: 14px; letter-spacing: .08em;
+  animation: welcomeRise .7s ease .4s both;
+}
+.welcome .btn { margin-top: 30px; pointer-events: auto; animation: welcomeRise .7s ease .7s both; }
+.welcome-hint {
+  margin: 16px 0 0; color: #5d6678; font-size: 11.5px; letter-spacing: .06em;
+  animation: welcomeRise .7s ease 1s both;
+}
+
 .toast {
   position: fixed; left: 50%; bottom: 44px; transform: translateX(-50%);
   background: var(--panel); border: 1px solid var(--border); color: var(--text);

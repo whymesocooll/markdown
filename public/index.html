@@ -150,6 +150,10 @@
     <div class="ctl"><input type="checkbox" id="setSpell"><span style="font-size:12px;color:var(--text-faint)">调用浏览器自带的拼写检查</span></div>
   </div>
   <div class="field">
+    <label for="setWelcome">启动欢迎页</label>
+    <div class="ctl"><input type="checkbox" id="setWelcome"><span style="font-size:12px;color:var(--text-faint)">启动时的全屏烟花画面</span></div>
+  </div>
+  <div class="field">
     <label for="setAutosave">自动保存延迟</label>
     <div class="ctl">
       <input type="range" id="setAutosave" min="300" max="3000" step="100">
@@ -189,6 +193,16 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<div class="welcome hidden" id="welcome">
+  <canvas></canvas>
+  <div class="welcome-inner">
+    <h1 class="welcome-title">InkFlow</h1>
+    <p class="welcome-tag">对标 Typora 的所见即所得 Markdown 编辑器 · 输入即渲染</p>
+    <button class="btn primary" id="welcomeEnter">开始写作</button>
+    <p class="welcome-hint">点击任意处或按任意键进入</p>
+  </div>
+</div>
 
 <div class="overlay hidden" id="qoOverlay"></div>
 <div class="dialog hidden quick-open" id="quickOpen">

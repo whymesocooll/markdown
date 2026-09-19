@@ -14,6 +14,7 @@ import * as FT from './filetree.js';
 import { desktopOnBeforeClose, desktopCloseReady, desktopRendererReady, desktopOnOpenFile } from './desktop.js';
 import { buildStandaloneHtml, buildStandaloneHtmlAsync, downloadFile, printToPdf, renderMarkdown, renderMarkdownAsync, buildRichFragment } from './exporter.js';
 import { loadTurndown } from './turndown-loader.js';
+import { showWelcome, dismissWelcome } from './welcome.js';
 import { debounce, countWords, panguSpacing, fmtTime, uid } from './utils.js';
 import { themeCssToBlocks, blockToCss } from './obsidian.js';
 
@@ -60,7 +61,7 @@ const SETTINGS_KEY = 'inkflow:settings';
 const defaults = {
   theme: 'dark', fontKind: 'sans', fontSize: 16, lineHeight: 1.8,
   pageWidth: 800, justify: false, focusMode: false, typewriter: false,
-  sidebar: true, customCss: '', autosaveMs: 700, spellcheck: false
+  sidebar: true, customCss: '', autosaveMs: 700, spellcheck: false, welcome: true
 };
 let settings = Object.assign({}, defaults, readJSON(SETTINGS_KEY));
 
@@ -829,6 +830,7 @@ async function openDoc() {
 // 桌面版：打开启动参数/外部请求指定的文件（右键“打开方式”、已运行时再次打开）
 async function openDocFromPath(p) {
   try {
+    dismissWelcome(); // 欢迎页还开着时先收起，直接呈现打开的文档
     if (!(await confirmDiscard())) return;
     const r = await F.openDesktopPath(p);
     await loadContent(r.name, r.text, r.handle, r.mtime);
@@ -1040,6 +1042,7 @@ function openSettings() {
   $('#setWidthVal').textContent = settings.pageWidth + 'px';
   $('#setJustify').checked = !!settings.justify;
   $('#setSpell').checked = !!settings.spellcheck;
+  $('#setWelcome').checked = settings.welcome !== false;
   $('#setAutosave').value = settings.autosaveMs;
   $('#setAutosaveVal').textContent = settings.autosaveMs + 'ms';
   $('#setCss').value = settings.customCss || '';
@@ -1254,6 +1257,9 @@ async function boot() {
   refreshThemeSelect();
   applyAppearance();
   wireEvents();
+  // 启动欢迎页：全屏烟花 + 品牌语，点击/任意键进入（设置里可关）。
+  // 自动化测试（webdriver）下跳过，避免遮挡测试点击
+  if (settings.welcome !== false && !navigator.webdriver) showWelcome({ onEnter: () => app.view.focus() });
   if (F.isDesktop) {
     desktopOnBeforeClose(async () => {
       if (app.dirty || checkpointNeedsAttention()) {
@@ -1299,7 +1305,8 @@ async function boot() {
   window.InkFlow = {
     app, F, buildStandaloneHtml, buildStandaloneHtmlAsync, renderMarkdown, panguSpacing, FT, treeState,
     renderMermaid, loadMermaid, finishSessionBeforeClose, loadContent,
-    setReadMode, toggleReadMode, isReadMode
+    setReadMode, toggleReadMode, isReadMode,
+    showWelcome, dismissWelcome
   };
 }
 
@@ -1747,6 +1754,7 @@ function wireEvents() {
   });
   $('#setJustify').addEventListener('change', (e) => { settings.justify = e.target.checked; saveSettings(); applyAppearance(); });
   $('#setSpell').addEventListener('change', (e) => { settings.spellcheck = e.target.checked; saveSettings(); applyAppearance(); });
+  $('#setWelcome').addEventListener('change', (e) => { settings.welcome = e.target.checked; saveSettings(); });
   $('#setAutosave').addEventListener('input', (e) => {
     settings.autosaveMs = Number(e.target.value);
     $('#setAutosaveVal').textContent = settings.autosaveMs + 'ms';
