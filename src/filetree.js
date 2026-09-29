@@ -2,12 +2,13 @@
 // （Chrome 支持结构化克隆 FileSystemHandle；重开页面后自动恢复，静默复用已授权权限）
 // Electron 桌面模式下走 Node fs IPC（见 desktop.js），句柄为 { kind, path, name } 结构
 import { hasFS } from './files.js';
+import { FS_DB } from './state.js';
 import {
   isDesktop, desktopOpenFolder, desktopRestoreFolder, desktopCloseFolder,
   desktopWalkDir, desktopReadFile, desktopCreateFile, desktopGrep
 } from './desktop.js';
 
-const DB_NAME = 'inkflow-fs';
+const DB_NAME = FS_DB;
 const DB_VER = 1;
 const DIR_KEY = 'root-dir';
 const MAX_DEPTH = 8; // 防止意外遍历巨型目录树

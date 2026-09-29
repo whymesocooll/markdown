@@ -1,6 +1,7 @@
 // 文件读写：Electron 桌面模式走 Node fs IPC；浏览器优先 File System Access API（可原地保存），否则回退到上传/下载
 import { downloadFile } from './exporter.js';
 import { uid } from './utils.js';
+import { VAULT_LIST_KEY, LAST_DOC_KEY, VAULT_DB } from './state.js';
 import { isDesktop, desktopOpenFile, desktopReadFile, desktopStatPath, desktopSaveFile, desktopSaveFileAs, desktopWriteAsset } from './desktop.js';
 
 export const hasFS = typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function';
@@ -108,9 +109,9 @@ export async function saveFileAs({ name, text }) {
 }
 
 /* ---------------- 本地文档库（IndexedDB） ---------------- */
-const VAULT = 'inkflow:vault';
-const LAST = 'inkflow:last';
-const DB_NAME = 'inkflow-vault';
+const VAULT = VAULT_LIST_KEY;
+const LAST = LAST_DOC_KEY;
+const DB_NAME = VAULT_DB;
 const DB_VER = 2;
 const DOC_STORE = 'docs';
 const HIST_STORE = 'history';

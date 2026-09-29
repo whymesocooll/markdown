@@ -17,6 +17,7 @@ import { loadTurndown } from './turndown-loader.js';
 import { showWelcome, dismissWelcome } from './welcome.js';
 import { debounce, countWords, panguSpacing, fmtTime, uid } from './utils.js';
 import { themeCssToBlocks, blockToCss } from './obsidian.js';
+import { settings, resetSettings, saveSettings, app, treeState, readRecents, saveRecents, OBSIDIAN_THEMES_KEY } from './state.js';
 
 /* ---------------- DOM 工具 ---------------- */
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -56,42 +57,8 @@ const ICON = {
   plus: svg(P('M12 5v14M5 12h14'))
 };
 
-/* ---------------- 全局状态 ---------------- */
-const SETTINGS_KEY = 'inkflow:settings';
-const defaults = {
-  theme: 'dark', fontKind: 'sans', fontSize: 16, lineHeight: 1.8,
-  pageWidth: 800, justify: false, focusMode: false, typewriter: false,
-  sidebar: true, customCss: '', autosaveMs: 700, spellcheck: false, welcome: true
-};
-let settings = Object.assign({}, defaults, readJSON(SETTINGS_KEY));
-
-const app = {
-  view: null,
-  docId: '',
-  name: '未命名.md',
-  handle: null,
-  dirty: false,
-  savedText: '',
-  checkpointText: '',
-  checkpointState: 'saved',
-  checkpointError: null,
-  saveSeq: 0,
-  closing: false,
-  forceClose: false, // 桌面版「不保存关闭」已确认，放行 beforeunload
-  sideTab: 'outline',
-  mtime: null,
-  path: '',
-  saveState: 'idle',   // idle|saving-file|saved-file|failed|conflict
-  vaultError: false
-};
-
 /* ---------------- 文件夹树状态 ---------------- */
-const treeState = {
-  nodes: [],      // 顶层节点
-  map: new Map(), // path -> 节点（含已懒加载的 children）
-  expanded: new Set(), // 已展开的目录 path
-  filter: ''      // 文件名搜索关键字（空 = 不过滤）
-};
+/* app / treeState / settings 定义见 state.js（全局状态唯一归属地） */
 
 function indexTree(nodes) {
   for (const n of nodes) {
@@ -106,13 +73,6 @@ async function loadTreeFromRoot(h) {
   indexTree(treeState.nodes);
   treeState.expanded.clear();
   treeState.filter = '';
-}
-
-function readJSON(key) {
-  try { return JSON.parse(localStorage.getItem(key) || '{}'); } catch (e) { return {}; }
-}
-function saveSettings() {
-  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* ignore */ }
 }
 
 /* ---------------- 主题与外观 ---------------- */
@@ -134,13 +94,12 @@ function themeFamily(t) {
 }
 
 /* ---------------- Obsidian 主题导入 ---------------- */
-const OBS_STORE = 'inkflow:obsidian-themes';
 let obsidianThemes = []; // [{ name, key, dark, light }] —— dark/light 为 InkFlow 变量集或 null
 function loadObsidianThemes() {
-  try { obsidianThemes = JSON.parse(localStorage.getItem(OBS_STORE) || '[]'); } catch (e) { obsidianThemes = []; }
+  try { obsidianThemes = JSON.parse(localStorage.getItem(OBSIDIAN_THEMES_KEY) || '[]'); } catch (e) { obsidianThemes = []; }
 }
 function saveObsidianThemes() {
-  try { localStorage.setItem(OBS_STORE, JSON.stringify(obsidianThemes)); } catch (e) { /* ignore */ }
+  try { localStorage.setItem(OBSIDIAN_THEMES_KEY, JSON.stringify(obsidianThemes)); } catch (e) { /* ignore */ }
 }
 function injectObsidianCss() {
   let st = document.getElementById('obsidian-theme-css');
@@ -724,14 +683,6 @@ async function handleTreeAction(act) {
 }
 
 /* ---------------- 最近文件（桌面版） ---------------- */
-const RECENTS_KEY = 'inkflow:recent-files';
-const RECENTS_MAX = 10;
-function readRecents() {
-  try { return JSON.parse(localStorage.getItem(RECENTS_KEY) || '[]'); } catch (e) { return []; }
-}
-function saveRecents(list) {
-  try { localStorage.setItem(RECENTS_KEY, JSON.stringify(list.slice(0, RECENTS_MAX))); } catch (e) { /* ignore */ }
-}
 function recordRecentFile(path, name) {
   if (!F.isDesktop || !path) return;
   const list = readRecents().filter((r) => r.path !== path);
@@ -1770,7 +1721,7 @@ function wireEvents() {
     toast('已为中英文之间补齐空格');
   });
   $('#btnResetSettings').addEventListener('click', () => {
-    settings = Object.assign({}, defaults);
+    resetSettings();
     saveSettings(); applyAppearance(); openSettings();
     toast('已恢复默认外观');
   });
