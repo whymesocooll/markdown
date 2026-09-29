@@ -22,7 +22,7 @@ npm run smoke:desktop    # Electron 冒烟：preload 桥 + 编辑器挂载 + 文
 - `main.cjs` 主进程：窗口加载 `dist/index.html`；菜单隐藏（快捷键全部由渲染进程处理）；Node fs + dialog 实现文件系统 IPC（含 `fs:write-asset` 图片落盘、`fs:grep` 全文搜索、mtime 冲突检测）。
 - `preload.cjs`：contextBridge 暴露 `window.inkflowDesktop`（folder:open/restore/close、fs:walk/read/create、file:open/save/saveAs）。
 - `src/desktop.js`：渲染进程适配层——`isDesktop` 检测（`window.inkflowDesktop` 存在时启用）。句柄统一为 `{ kind, path, name }` 结构，与浏览器 File System Access handle 同构。
-- `filetree.js` / `files.js` 双后端：Electron 走 IPC，浏览器走 File System Access API（行为不变，测试可继续用浏览器环境）。**Electron 模式比较文件用 `path`（`main.js` 里 `key(h)` 辅助函数），不要用对象引用比较。**
+- `filetree.js` / `files.js` 双后端：Electron 走 IPC，浏览器走 File System Access API（行为不变，测试可继续用浏览器环境）。**Electron 模式比较文件用 `path`（`sidebar.js` 的 `treeNodesHtml` 里 `key(h)` 辅助函数），不要用对象引用比较。**
 - 文件夹路径持久化在 `userData/folder-path.json`（主进程维护，替代浏览器的 IndexedDB）。
 - `INKFLOW_SMOKE=1`：启动后验证渲染进程并自动退出（0/1）；`INKFLOW_SHOT=<path>`：截图保存后退出；`INKFLOW_THEME=<主题名>`：配合截图模式，先写入主题设置再刷新页面，用于逐主题截图验证。三者用于打包产物验证。
 
@@ -73,11 +73,20 @@ CodeMirror 用 `getBoundingClientRect`（不含 margin 的边框盒）建坐标�
 
 ### 其余模块
 
-- `src/main.js`：全部 UI——工具栏、侧栏（大纲/文档/搜索三个标签页）、快速打开（Ctrl+P 模糊匹配，候选=文件树+最近+暂存）、设置面板、状态栏、菜单、拖拽打开、全局快捷键、历史版本恢复。粘贴管线在 `boot()` 的 `pasteHandler`：图片优先落盘（桌面版文档旁 / 文件夹树根 `assets/`，失败回退 base64），富文本 HTML 经 `insertHtmlAsMarkdown`（Turndown）转 Markdown。`boot()` 里装配一切，并在 `window.InkFlow` 上暴露调试 API（测试依赖它）。
+main.js 已按依赖方向拆分，**依赖单向无环**：`state → icons/utils → sidebar/dialogs/theme → save-pipeline → doc-lifecycle → main.js`（组装根）。
+
+- `src/state.js`：全局状态唯一归属地（不依赖其他 src 模块）——`app`（会话状态）、`treeState`（文件夹树）、`settings` + `defaults`（**加载时校验**：类型不符丢弃、未知主题回退 dark；恢复默认用 `resetSettings()` 原地恢复）、`readRecents`/`saveRecents`（最近文件）。全部 7 个存储 key 常量集中在此（settings/recent-files/obsidian-themes/vault/last/两个 IndexedDB 名）。
+- `src/icons.js`：DOM 查询（`$`/`$$`）与 SVG 图标集（`P`/`svg`/`ICON`）。
+- `src/sidebar.js`：侧栏渲染层（只渲染不做动作）——大纲（`buildOutline`/`scheduleOutline`/`highlightOutline`/`getOutline`）、文件树渲染与状态维护（`indexTree`/`loadTreeFromRoot`/`treeSectionHtml` 等）、文档库/历史/最近分区渲染（`renderFiles`/`refreshVaultSection`/`refreshHistorySection`）。
+- `src/dialogs.js`：应用内对话框——`toast`（错误/警告带手动关闭）、`showConfirm`（Promise 化确认）、`showPrompt`（Electron 无 window.prompt 的输入替代）；Escape 关闭监听在模块加载时注册。
+- `src/theme.js`：主题与外观——`effectiveTheme`/`themeFamily`/`THEME_NAMES`、Obsidian 主题导入注入（`obsidianThemes` 数组私有，删除走 `deleteObsidianTheme`）、`applyAppearance`（字号/行高/页宽 CSS 变量、专注/打字机/侧栏开关、主题变化刷新装饰、拼写检查 compartment）。
+- `src/save-pipeline.js`：文档身份与保存管线——`text`/`setTitle`/`markDirty`/`renderSaveState`（状态条）、`checkpoint`（本地暂存，成功后刷 `refreshVaultSection`）、`autosave`（防抖，先 checkpoint 再写文件、外部修改冲突即停）、`finishSessionBeforeClose`（关闭前落盘并清空临时备份）。
+- `src/doc-lifecycle.js`：文档生命周期动作——新建/打开/桌面版按路径打开/导入（`newDoc`/`openDoc`/`openDocFromPath`/`loadContent`/`openVaultDoc`）、保存与另存（`saveDoc`，前置确认 `confirmDiscard`）、导出（HTML/PDF/MD/复制富文本）、历史恢复（`restoreHistory`）、最近文件（`recordRecentFile`/`reopenRecent`/`removeRecent`）。
+- `src/main.js`：组装根（约 1000 行）——`boot()` 装配编辑器并暴露 `window.InkFlow` 调试 API（测试依赖它，**暴露面不可改**）、工具栏与菜单、设置面板、粘贴管线（`pasteHandler`：图片优先落盘，桌面版文档旁 / 文件夹树根 `assets/`，失败回退 base64；富文本 HTML 经 `insertHtmlAsMarkdown`（Turndown）转 Markdown）、状态栏、阅读模式、快速打开（Ctrl+P 模糊匹配，候选=文件树+最近+暂存）、全文搜索面板、拖拽打开、`wireEvents()` 全部事件接线。
 - `src/turndown-loader.js`：Turndown + GFM 插件懒加载（富文本粘贴 → Markdown），与 katex/mermaid 同款「失败可重试」模式。
 - `src/obsidian.js`：Obsidian 主题导入器——解析 theme.css 的 CSS 变量（`.theme-dark`/`.theme-light`/`:root`/纯变量块/联合选择器，嵌套 `var()` fallback 多轮展开），映射为 InkFlow 主题变量（`MAP` 表 + 派生色 `color-mix`）。设置面板「导入 CSS 文件」导入，持久化于 `localStorage['inkflow:obsidian-themes']`，注入到 `<style id="obsidian-theme-css">`，主题 key 形如 `obs-<slug>[-light]`。解析/映射为纯函数，`test/obsidian.mjs` 直测（fixture 见 `test/fixtures/sample-theme.css`）。
 - `src/files.js`：优先 File System Access API（可原地保存），否则回退上传/下载。本地文档库为 IndexedDB `inkflow-vault`（DB v2）：`docs` 存会话临时备份（关闭清空），`history` 存历史快照（每日一份、保留 7 天、跨会话保留，`putHistorySnapshot` 自带 60s 限频）；另 `inkflow:last`（上次文档 id）。图片落盘：`writeAssetDesktop`（走 fs:write-asset IPC）/`writeAssetBrowser`（写入目录句柄下 assets/，去重命名）。
-- `src/filetree.js`：文件夹树——`showDirectoryPicker` 打开目录、递归遍历（懒加载子目录，深度上限 8）、句柄持久化到 IndexedDB（`inkflow-fs`，重开页面静默恢复）。`searchFolder` 全文搜索（桌面走 fs:grep IPC，浏览器递归 FSA；上限：500 文件/200 结果/单文件 2MB）。树状态（展开集合、节点 Map）在 `main.js` 的 `treeState`，渲染逻辑在 `main.js`（`treeSectionHtml`/`treeNodesHtml`）。
+- `src/filetree.js`：文件夹树——`showDirectoryPicker` 打开目录、递归遍历（懒加载子目录，深度上限 8）、句柄持久化到 IndexedDB（`inkflow-fs`，重开页面静默恢复）。`searchFolder` 全文搜索（桌面走 fs:grep IPC，浏览器递归 FSA；上限：500 文件/200 结果/单文件 2MB）。树状态（展开集合、节点 Map）在 `state.js` 的 `treeState`，渲染逻辑在 `sidebar.js`（`treeSectionHtml`/`treeNodesHtml`）。
 - `src/exporter.js`：marked + highlight.js + KaTeX → 自包含 HTML（KaTeX/hljs/doc CSS 全部内联）；预处理管线 `replaceToc`（[toc]→锚链接列表）→ `extractFootnotes`（必须先于 marked：`[^x]:` 会被 marked 当链接引用定义吞掉）→ `extractMath`；`printToPdf` 按主题色系（dark/light）设页面底色；`buildRichFragment` 产出剪贴板富文本片段；`downloadFile` 走 Blob URL。mermaid 块导出时在浏览器内渲染为内联 SVG（`buildStandaloneHtmlAsync`），无 mermaid 时结果与同步版一致。
 - `src/mermaid.js`：mermaid 懒加载共享模块（Widget 与导出共用实例）。
 - `src/table-edit.js`：表格源码纯函数操作（解析 → 增删行列/对齐/单元格 → 整表重建），供 TableWidget 右键菜单与单元格编辑使用。
@@ -85,7 +94,7 @@ CodeMirror 用 `getBoundingClientRect`（不含 margin 的边框盒）建坐标�
 
 ### 主题
 
-配色全部走 CSS 变量 + `<html data-theme>`；高亮样式类（`.tok-*`）引用变量，切换主题无需重建编辑器。共 9 套主题：`dark`（墨夜）/`light`（素白）为默认，另有 `dracula`（德古拉）、`nord`（北极光）、`tokyo-night`（东京之夜）、`ink-wash`（墨池青黛）、`carbon-lilac`（碳素紫晶）、`paper-saffron`（藏经纸）、`solarized-light`（日光），主题块定义在 `styles.css` 顶部的 `[data-theme="..."]` 里（每套 31 个变量，含 `--inline-code`）。展示名映射在 `main.js` 的 `THEME_NAMES`；工具栏主题循环按钮顺序 `['dark','dracula','nord','tokyo-night','ink-wash','carbon-lilac','paper-saffron','light','solarized-light','auto']`。**导出 HTML 只支持暗/亮两套文档样式**，新主题经 `themeFamily()` 归入 dark/light 再传给导出器，不要直接传新主题名（mermaid 图表配色会随该值渲染成对应深浅）。默认值在 `main.js` 的 `settings.defaults`，持久化于 `localStorage['inkflow:settings']`（无校验，新主题值可直接生效）。源码模式由 `sourceModeField` StateField 控制。
+配色全部走 CSS 变量 + `<html data-theme>`；高亮样式类（`.tok-*`）引用变量，切换主题无需重建编辑器。共 9 套主题：`dark`（墨夜）/`light`（素白）为默认，另有 `dracula`（德古拉）、`nord`（北极光）、`tokyo-night`（东京之夜）、`ink-wash`（墨池青黛）、`carbon-lilac`（碳素紫晶）、`paper-saffron`（藏经纸）、`solarized-light`（日光），主题块定义在 `styles.css` 顶部的 `[data-theme="..."]` 里（每套 31 个变量，含 `--inline-code`）。展示名映射在 `theme.js` 的 `THEME_NAMES`；工具栏主题循环按钮顺序 `['dark','dracula','nord','tokyo-night','ink-wash','carbon-lilac','paper-saffron','light','solarized-light','auto']`。**导出 HTML 只支持暗/亮两套文档样式**，新主题经 `themeFamily()` 归入 dark/light 再传给导出器，不要直接传新主题名（mermaid 图表配色会随该值渲染成对应深浅）。默认值在 `state.js` 的 `defaults`，持久化于 `localStorage['inkflow:settings']`，加载时经 `sanitizeSettings` 校验（静态主题白名单 + `obs-` 前缀，类型不符回退默认）。源码模式由 `sourceModeField` StateField 控制。
 
 ## 关键注意点
 
