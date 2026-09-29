@@ -12,16 +12,17 @@ import * as C from './commands.js';
 import * as F from './files.js';
 import * as FT from './filetree.js';
 import { desktopOnBeforeClose, desktopCloseReady, desktopRendererReady, desktopOnOpenFile } from './desktop.js';
-import { buildStandaloneHtml, buildStandaloneHtmlAsync, downloadFile, printToPdf, renderMarkdown, renderMarkdownAsync, buildRichFragment } from './exporter.js';
+import { buildStandaloneHtml, buildStandaloneHtmlAsync, renderMarkdown, renderMarkdownAsync } from './exporter.js';
 import { loadTurndown } from './turndown-loader.js';
 import { showWelcome, dismissWelcome } from './welcome.js';
-import { settings, resetSettings, saveSettings, app, treeState, readRecents, saveRecents } from './state.js';
+import { settings, resetSettings, saveSettings, app, treeState, readRecents } from './state.js';
 import { $, $$, ICON } from './icons.js';
 import { renderFiles, refreshVaultSection, refreshHistorySection, buildOutline, scheduleOutline, highlightOutline, getOutline, loadTreeFromRoot, indexTree } from './sidebar.js';
 import { toast, showConfirm, showPrompt, dismissPrompt } from './dialogs.js';
-import { effectiveTheme, THEME_NAMES, themeFamily, loadObsidianThemes, injectObsidianCss, refreshThemeSelect, renderObsidianList, importObsidianTheme, obsThemeLabel, applyAppearance, deleteObsidianTheme } from './theme.js';
+import { THEME_NAMES, loadObsidianThemes, injectObsidianCss, refreshThemeSelect, renderObsidianList, importObsidianTheme, obsThemeLabel, applyAppearance, deleteObsidianTheme } from './theme.js';
 import { text, markDirty, setTitle, renderSaveState, checkpointNeedsAttention, checkpoint, autosave, finishSessionBeforeClose } from './save-pipeline.js';
-import { debounce, countWords, panguSpacing, fmtTime, uid, escapeAttr, pathBase } from './utils.js';
+import { confirmDiscard, newDoc, openDoc, openDocFromPath, loadContent, openVaultDoc, saveDoc, restoreHistory, recordRecentFile, reopenRecent, removeRecent, exportHtml, exportPdf, exportMd, copyAsHtml } from './doc-lifecycle.js';
+import { debounce, countWords, panguSpacing, uid, escapeAttr, pathBase } from './utils.js';
 
 /* ---------------- 全局状态 ---------------- */
 /* app / treeState / settings 定义见 state.js（全局状态唯一归属地） */
@@ -39,35 +40,7 @@ import { debounce, countWords, panguSpacing, fmtTime, uid, escapeAttr, pathBase 
 
 /* ---------------- 文档库 ---------------- */
 /* renderFiles / refreshVaultSection / refreshHistorySection 及各分区 HTML 见 sidebar.js（侧栏渲染层） */
-
-/** 恢复历史快照：以快照内容新建会话文档（不恢复文件句柄） */
-async function restoreHistory(id) {
-  const snap = F.getHistory(id);
-  if (!snap) return;
-  const choice = await showConfirm({
-    title: '恢复历史版本',
-    message: `把编辑器内容替换为 ${fmtTime(snap.updated)} 的「${snap.name}」快照（约 ${snap.text.length} 字符）？当前文档未保存的修改将丢失。`,
-    actions: [
-      { label: '恢复', value: 'restore', kind: 'primary' },
-      { label: '取消', value: 'cancel', kind: 'ghost' }
-    ]
-  });
-  if (choice !== 'restore') return;
-  app.docId = uid();
-  app.handle = null;
-  app.path = '';
-  app.mtime = null;
-  app.saveState = 'idle';
-  setTitle(snap.name, '');
-  setDoc(app.view, snap.text);
-  app.savedText = snap.text;
-  app.checkpointText = '';
-  markDirty(false);
-  await checkpoint();
-  renderFiles();
-  app.view.focus();
-  toast('已恢复历史版本');
-}
+/* restoreHistory（历史快照恢复）见 doc-lifecycle.js（文档生命周期动作） */
 
 /* ---------------- 文件夹树交互 ---------------- */
 async function toggleDir(path) {
@@ -132,207 +105,9 @@ async function handleTreeAction(act) {
   }
 }
 
-/* ---------------- 最近文件（桌面版） ---------------- */
-function recordRecentFile(path, name) {
-  if (!F.isDesktop || !path) return;
-  const list = readRecents().filter((r) => r.path !== path);
-  list.unshift({ name: name || path.split(/[\\/]/).pop(), path, at: Date.now() });
-  saveRecents(list);
-  if (!$('#panelFiles').classList.contains('hidden')) renderFiles();
-}
-async function reopenRecent(i) {
-  const r = readRecents()[i];
-  if (!r) return;
-  const st = F.isDesktop ? await F.statDesktopPath(r.path) : null;
-  if (st && !st.exists) {
-    toast('文件不存在或已被移动', { type: 'error', duration: 7000 });
-    return;
-  }
-  if (!(await confirmDiscard())) return;
-  try {
-    const rd = await F.openDesktopPath(r.path);
-    await loadContent(rd.name, rd.text, rd.handle, rd.mtime);
-    toast(`已打开 ${rd.name}`);
-  } catch (e) {
-    toast('打开文件失败：' + (e.message || e), { type: 'error', duration: 7000 });
-  }
-}
-async function removeRecent(i) {
-  const list = readRecents();
-  list.splice(i, 1);
-  saveRecents(list);
-  renderFiles();
-}
-
 /* ---------------- 文件操作 ---------------- */
-async function confirmDiscard() {
-  if (!app.dirty && !checkpointNeedsAttention()) return true;
-  const choice = await showConfirm({
-    title: '文档尚未保存',
-    message: '当前文档有尚未保存的改动，接下来要怎么处理？',
-    actions: [
-      { label: '保存并继续', value: 'save', kind: 'primary' },
-      { label: '不保存继续', value: 'discard', kind: 'ghost' },
-      { label: '取消', value: 'cancel', kind: 'ghost' }
-    ]
-  });
-  if (choice === 'discard') return true;
-  if (choice === 'save') return (await saveDoc(false)) === 'saved';
-  return false;
-}
-
-async function newDoc() {
-  if (!(await confirmDiscard())) return;
-  app.docId = uid();
-  app.handle = null;
-  app.path = '';
-  app.mtime = null;
-  app.saveState = 'idle';
-  setTitle('未命名.md', '');
-  setDoc(app.view, '');
-  app.savedText = '';
-  app.checkpointText = '';
-  markDirty(false);
-  const r = await checkpoint();
-  if (!r.ok) toast('新文档未能本地暂存，请立即保存或导出备份');
-  renderFiles();
-  app.view.focus();
-}
-
-async function openDoc() {
-  if (!(await confirmDiscard())) return;
-  try {
-    const r = await F.openFile();
-    if (!r) return; // 用户取消（Electron dialog 返回 null）
-    await loadContent(r.name, r.text, r.handle, r.mtime);
-    toast(`已打开 ${r.name}`);
-  } catch (e) {
-    if (e && e.name === 'AbortError') return; // 浏览器文件选择器被取消
-    toast('打开文件失败：' + (e && e.message ? e.message : e), { type: 'error', duration: 7000 });
-  }
-}
-
-// 桌面版：打开启动参数/外部请求指定的文件（右键“打开方式”、已运行时再次打开）
-async function openDocFromPath(p) {
-  try {
-    dismissWelcome(); // 欢迎页还开着时先收起，直接呈现打开的文档
-    if (!(await confirmDiscard())) return;
-    const r = await F.openDesktopPath(p);
-    await loadContent(r.name, r.text, r.handle, r.mtime);
-    toast(`已打开 ${r.name}`);
-  } catch (e) {
-    toast('打开文件失败：' + (e.message || e));
-  } finally {
-    // 已开完一个，上报就绪让主进程继续下发队列里的下一个（如有）
-    desktopRendererReady();
-  }
-}
-
-async function loadContent(name, content, handle, mtime = null) {
-  app.docId = uid();
-  app.handle = handle || null;
-  app.path = app.handle?.path || '';
-  app.mtime = app.handle ? mtime : null;
-  app.saveState = 'idle'; // 清掉上一文档残留的 conflict/failed 状态
-  setTitle(name, app.path);
-  if (app.path) recordRecentFile(app.path, app.name);
-  setDoc(app.view, content);
-  app.savedText = content;
-  app.checkpointText = '';
-  app.checkpointState = 'saving';
-  markDirty(false);
-  const r = await checkpoint();
-  if (!r.ok) return r;
-  renderFiles();
-  buildOutline();
-  return r;
-}
-
-/** 打开本地暂存文档（文件面板点击 / 快速打开共用） */
-async function openVaultDoc(d) {
-  if (!(await confirmDiscard())) return;
-  app.docId = d.id;
-  app.handle = null;
-  app.saveState = 'idle';
-  setTitle(d.name);
-  setDoc(app.view, d.text);
-  app.savedText = d.text;
-  app.checkpointText = d.text;
-  app.checkpointState = 'saved';
-  markDirty(false);
-  F.setLastDocId(d.id);
-  buildOutline();
-  renderFiles();
-  app.view.focus();
-}
-
-async function saveDoc(forceAs) {
-  const content = text();
-  try {
-    const r = forceAs
-      ? await F.saveFileAs({ name: app.name, text: content })
-      : await F.saveFile({ handle: app.handle, name: app.name, text: content, mtime: app.mtime });
-    if (!r) return 'cancelled'; // 用户取消了保存对话框（Electron）
-    if (r.conflict) {
-      app.saveState = 'conflict';
-      toast('文件已被其他程序修改，请先重新打开或使用另存为', { type: 'error', duration: 7000 });
-      renderSaveState();
-      return 'conflict';
-    }
-    app.handle = r.handle;
-    app.path = r.handle?.path || '';
-    app.mtime = r.mtime ?? app.mtime;
-    setTitle(r.name, app.path);
-    app.savedText = content;
-    app.saveState = 'idle';
-    markDirty(false);
-    const local = await checkpoint();
-    if (!local.ok) toast('文件已保存，但本地暂存失败');
-    renderFiles();
-    if (app.path) recordRecentFile(app.path, r.name);
-    toast((F.isDesktop || F.hasFS) ? `已保存到 ${r.name}` : `已导出 ${r.name}`);
-    return 'saved';
-  } catch (e) {
-    if (e && e.name !== 'AbortError') toast('保存失败：' + (e.message || e), { type: 'error', duration: 7000 });
-    return 'failed';
-  }
-}
-
-function baseName() {
-  return app.name.replace(/\.(md|markdown|txt)$/i, '') || 'document';
-}
-
-async function exportHtml() {
-  const html = await buildStandaloneHtmlAsync(text(), { title: baseName(), theme: themeFamily(effectiveTheme()) });
-  downloadFile(baseName() + '.html', html, 'text/html;charset=utf-8');
-  toast('已导出 HTML');
-}
-async function exportPdf() {
-  // PDF 配色跟随当前主题色系（亮色主题出白底，暗色出深底）
-  const r = await printToPdf(text(), { title: baseName(), theme: themeFamily(effectiveTheme()) });
-  if (r === 'saved') toast('已导出 PDF');
-  else if (r === 'cancelled') return; // 用户取消，不打扰
-  else if (r && r.startsWith('failed:')) toast('导出 PDF 失败：' + r.slice(7));
-  else toast('已调起打印，选择「另存为 PDF」');
-}
-function exportMd() {
-  downloadFile(baseName() + '.md', text(), 'text/markdown;charset=utf-8');
-  toast('已导出 Markdown');
-}
-/** 复制为富文本 HTML（含 KaTeX 样式与内联 mermaid SVG），粘进邮件/Word/公众号保留排版 */
-async function copyAsHtml() {
-  const html = await buildRichFragment(text(), { theme: themeFamily(effectiveTheme()) });
-  try {
-    if (!navigator.clipboard || !window.ClipboardItem) throw new Error('当前环境剪贴板不支持');
-    await navigator.clipboard.write([new ClipboardItem({
-      'text/html': new Blob([html], { type: 'text/html' }),
-      'text/plain': new Blob([text()], { type: 'text/plain' })
-    })]);
-    toast('已复制为富文本 HTML');
-  } catch (e) {
-    toast('复制失败：' + (e.message || e), { type: 'error', duration: 7000 });
-  }
-}
+/* confirmDiscard / newDoc / openDoc / openDocFromPath / loadContent / openVaultDoc / saveDoc /
+   restoreHistory / recordRecentFile / reopenRecent / removeRecent / 各导出 见 doc-lifecycle.js */
 
 /* ---------------- 工具栏 ---------------- */
 function buildToolbar() {
