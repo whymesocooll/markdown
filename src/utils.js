@@ -14,6 +14,11 @@ export function escapeHtml(s) {
   }[c]));
 }
 
+/** 转义 HTML 属性值（title/data-* 等双引号包裹场景，不转义单引号） */
+export function escapeAttr(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
 // 轻量 HTML 净化：用于把渲染结果写入 innerHTML 前过滤掉脚本 / 事件属性 / 危险协议
 export function sanitizeHtml(html) {
   const tpl = document.createElement('template');
