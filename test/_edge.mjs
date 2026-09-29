@@ -35,7 +35,11 @@ export async function launchEdge(extraArgs = []) {
       if (port && wsPath) wsEndpoint = `ws://127.0.0.1:${port}${wsPath}`;
     } catch (e) { /* 文件尚未出现，继续等 */ }
   }
-  if (!wsEndpoint) throw new Error('Edge DevTools 端口未就绪（DevToolsActivePort 15s 内未出现）');
+  if (!wsEndpoint) {
+    // 失败路径同样清理 profile——此前每次启动失败都会在 TEMP 漏掉一个目录（浏览器进程可能还活着）
+    try { fs.rmSync(profile, { recursive: true, force: true }); } catch (e) { /* ignore */ }
+    throw new Error('Edge DevTools 端口未就绪（DevToolsActivePort 15s 内未出现）');
+  }
 
   const browser = await puppeteer.connect({
     browserWSEndpoint: wsEndpoint,
