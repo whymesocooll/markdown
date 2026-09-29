@@ -152,5 +152,6 @@ const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} 通过`);
 
 // 尽力关闭浏览器子进程（在结论输出之后执行，避免本环境的进程终止钩子截断输出）
-process.on('exit', () => { try { browser.process()?.kill('SIGKILL'); } catch (e) { /* ignore */ } });
+// connect 模式下 browser.process() 为 null，旧兜底从未生效；改为退出前显式关闭（内含 CDP Browser.close + profile 重试清理）
+try { await browser.close(); } catch (e) { /* 浏览器已退出，忽略 */ }
 process.exit(failed.length || errors.length ? 1 : 0);

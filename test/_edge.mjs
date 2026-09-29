@@ -15,6 +15,17 @@ export const EDGE = process.env.EDGE || 'C:/Program Files (x86)/Microsoft/Edge/A
 
 export async function launchEdge(extraArgs = []) {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'inkflow-edge-'));
+  // 自愈清扫：上次运行若因进程退出延迟导致 profile 删除失败，这里把陈旧目录（>30 分钟）顺手清掉。
+  // 只清超过时长的目录，避免误删并行测试正在使用的 profile
+  try {
+    for (const d of fs.readdirSync(os.tmpdir())) {
+      if (!d.startsWith('inkflow-edge-')) continue;
+      const full = path.join(os.tmpdir(), d);
+      if (Date.now() - fs.statSync(full).mtimeMs > 30 * 60 * 1000) {
+        fs.rmSync(full, { recursive: true, force: true });
+      }
+    }
+  } catch (e) { /* 清扫失败不影响启动 */ }
   const args = [
     '--headless=new',
     '--remote-debugging-port=0', // 端口由浏览器自选并写入 DevToolsActivePort，避免固定端口冲突
@@ -45,11 +56,27 @@ export async function launchEdge(extraArgs = []) {
     browserWSEndpoint: wsEndpoint,
     defaultViewport: { width: 800, height: 600 } // 与 puppeteer.launch 默认视口一致
   });
-  // 关闭时清理临时 profile
+  // 关闭时清理临时 profile。两个坑（此前曾因此向 TEMP 泄漏大量孤儿进程与 profile 目录）：
+  // 1) connect 模式下 browser.close() 只断开连接、不结束浏览器进程 —— 必须先经 CDP 显式 Browser.close；
+  // 2) Windows 下浏览器进程完全退出、文件句柄释放有延迟 —— 删除需等断开并重试。
   const origClose = browser.close.bind(browser);
   browser.close = async () => {
-    try { await origClose(); } finally {
-      try { fs.rmSync(profile, { recursive: true, force: true }); } catch (e) { /* ignore */ }
+    try {
+      try {
+        const session = await browser.target().createCDPSession();
+        await session.send('Browser.close');
+        session.detach().catch(() => {});
+      } catch (e) { /* 浏览器已退出等情况，忽略 */ }
+      try { await origClose(); } catch (e) { /* ignore */ }
+      await Promise.race([
+        new Promise((r) => browser.once('disconnected', r)),
+        new Promise((r) => setTimeout(r, 5000)),
+      ]);
+    } finally {
+      for (let i = 0; i < 10; i++) {
+        try { fs.rmSync(profile, { recursive: true, force: true }); break; }
+        catch (e) { await new Promise((r) => setTimeout(r, 500)); }
+      }
     }
   };
   return browser;
