@@ -136,3 +136,9 @@ export function fmtTime(ts) {
 export function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
+
+/** 路径缩略显示：`…/父目录/文件名`（侧栏最近列表与快速打开候选共用） */
+export function pathBase(p) {
+  const s = String(p).split(/[\\/]/).filter(Boolean);
+  return s.length > 1 ? '…/' + s[s.length - 2] + '/' + s[s.length - 1] : p || '';
+}
