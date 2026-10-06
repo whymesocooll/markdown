@@ -45,6 +45,7 @@ node test/prompt.mjs    # 新建文件输入对话框：弹出/创建/重名拦�
 node test/table.mjs     # 表格编辑：单元格内联编辑、右键菜单增删行列/对齐
 node test/mermaid.mjs   # Mermaid：widget 渲染、光标回源码、导出内联 SVG
 node test/regression.mjs # 缺陷回归：标题菜单、块插入换行、widget 点击定位、监听器、saveState
+node test/make-readme-shots.mjs # 重新生成 README 截图（docs/screenshots/，注入 test/fixtures/readme-demo.md 逐主题截图）
 node test/diag.mjs      # 诊断：抓页面错误、检查 window.InkFlow
 node test/diag2.mjs
 ```
