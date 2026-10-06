@@ -30,7 +30,7 @@ npm run smoke:desktop    # Electron 冒烟：preload 桥 + 编辑器挂载 + 文
 
 ## 提交约定
 
-每次改完代码且验证通过后，自动执行 `git add -A && git commit && git push`（不需要等用户提醒）。提交信息用中文写清楚修改了哪些内容（列要点），并保留 `Co-Authored-By: Codex <noreply@anthropic.com>` 结尾。远端为 GitHub 私有仓库 `whymesocooll/markdown`（`origin/main`）。构建产物不入库（见 `.gitignore`）。
+每次改完代码且验证通过后，自动执行 `git add -A && git commit && git push`（不需要等用户提醒）。提交信息用中文写清楚修改了哪些内容（列要点）。**提交信息一律不加任何 Co-Authored-By / AI 署名尾注**（用户已从历史中清除全部此类署名）。远端为 GitHub 私有仓库 `whymesocooll/markdown`（`origin/main`）。构建产物不入库（见 `.gitignore`）。
 
 
 
