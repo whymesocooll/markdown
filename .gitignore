@@ -9,6 +9,10 @@ out3/
 release/
 src/gen-assets.js
 
+# Rust/Tauri 构建产物
+src-tauri/target/
+src-tauri/gen/schemas/
+
 # 测试/调试残留（CLAUDE.md：根目录 shots-* 与 *.txt 均为残留）
 shots/
 shots-*

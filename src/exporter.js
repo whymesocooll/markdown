@@ -3,7 +3,7 @@
 import { escapeHtml, slugify, collectHeadings } from './utils.js';
 import { KATEX_CSS, HLJS_DARK_CSS, HLJS_LIGHT_CSS, DOC_CSS } from './gen-assets.js';
 import { renderMermaid } from './mermaid.js';
-import { isDesktop, desktopExportPdf } from './desktop.js';
+import { isDesktop, desktopExportPdf, desktopDownloadFile } from './desktop.js';
 import { loadKatex } from './katex-loader.js';
 
 let depsPromise = null;
@@ -286,6 +286,11 @@ ${body}
 }
 
 export function downloadFile(filename, content, mime = 'text/plain;charset=utf-8') {
+  if (isDesktop && !(content instanceof Blob)) {
+    // 桌面版（Tauri）：WebView2 的 Blob 下载行为与浏览器不同，字符串内容走保存对话框直写文件
+    desktopDownloadFile(filename, String(content));
+    return;
+  }
   const blob = content instanceof Blob ? content : new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -301,7 +306,7 @@ export async function printToPdf(md, { title = 'Document', theme = 'light' } = {
   const dark = theme === 'dark';
   const html = (await buildStandaloneHtmlAsync(md, { title, theme }))
     .replace('</head>', `<style>
-@page { margin: 18mm 16mm; }
+@page { size: A4; margin: 18mm 16mm; }
 body { background: ${dark ? '#17181d' : '#fff'} !important; }
 .ink-article { max-width: none; padding: 0; }
 @media print { a { color: inherit; text-decoration: underline; } pre, table, blockquote, .math-block { break-inside: avoid; } h1,h2,h3 { break-after: avoid; } }

@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "渲染进程默认能力：仅事件 API（invoke 的自定义命令默认放行，文件操作全在自家 command 内）",
+  "windows": ["main"],
+  "permissions": [
+    "core:default"
+  ]
+}

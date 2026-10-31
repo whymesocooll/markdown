@@ -3,13 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "description": "InkFlow - A Typora-like WYSIWYG Markdown editor",
-  "main": "main.cjs",
   "scripts": {
     "build": "node build.mjs",
     "dev": "node build.mjs --watch",
-    "desktop": "npm run build && electron .",
-    "pack": "electron-packager . InkFlow --platform=win32 --arch=x64 --out=release --overwrite --ignore=node_modules --ignore=^/src --ignore=^/test --ignore=^/shots --ignore=^/shots- --ignore=^/out --ignore=^/out2 --ignore=^/out3 --ignore=^\\.txt$ --ignore=^/esbuild_ --ignore=^/smoke_out.txt --ignore=^/procs.txt --ignore=^/srv --ignore=^/server_stop.txt --ignore=^/attrs.txt --ignore=^/rename_result.txt --ignore=^/_cleanup.txt --ignore=^/esbuild_count.txt",
-    "smoke:desktop": "node test/desktop-smoke.mjs",
+    "desktop": "tauri dev",
+    "pack": "tauri build && node scripts/pack-release.mjs",
+    "smoke:desktop": "npm run build && cargo build --manifest-path src-tauri/Cargo.toml && node test/desktop-smoke.mjs",
     "test:vault": "node test/vault.mjs",
     "test": "npm run build && node test/run.mjs"
   },
@@ -23,13 +22,13 @@
     "@codemirror/view": "^6.43.8",
     "@lezer/highlight": "^1.2.3",
     "@lezer/markdown": "^1.7.2",
+    "@tauri-apps/api": "^2.12.4",
     "codemirror": "^6.0.2",
     "turndown": "^7.2.4",
     "turndown-plugin-gfm": "^1.0.2"
   },
   "devDependencies": {
-    "electron": "^43.3.0",
-    "electron-packager": "^17.1.2",
+    "@tauri-apps/cli": "^2.12.4",
     "esbuild": "^0.28.2",
     "highlight.js": "^11.11.1",
     "katex": "^0.18.2",
